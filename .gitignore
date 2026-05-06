@@ -1,0 +1,13 @@
+build-*/
+tests/data/UniqueKmerComputerTest.fa
+tests/data/kmers.tsv.gz
+tests/data/small1-genotypes-graph.vcf
+tests/data/small1-ids-close-graph.vcf
+tests/data/small1-ids-close.vcf
+tests/data/small1-ids-genotypes.vcf
+tests/data/small1-phasing-graph.vcf
+tests/data/small4-sampled-panel.vcf
+tests/data/testfull_genotyping.vcf
+tests/data/testfull_histogram.histo
+tests/data/testsampled_genotyping.vcf
+tests/data/testsampled_histogram.histo

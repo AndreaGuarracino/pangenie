@@ -198,6 +198,8 @@ void HMM::compute_forward_column(size_t column_index) {
 
 	// construct new column
 	HMMColumn* current_column = new HMMColumn();
+	// stage-1 microopt: pre-size to avoid push_back capacity checks in hot loop.
+	current_column->column.resize((size_t)nr_paths * nr_paths);
 
 	// emission probability computer
 	EmissionProbabilityComputer emission_probability_computer(this->unique_kmers->at(variant_id), this->probabilities);
@@ -206,11 +208,14 @@ void HMM::compute_forward_column(size_t column_index) {
 	vector<long double> helper_j(nr_paths);
 	long double helper_ij = 0.0;
 
+	// stage-1 microopt: cache the underlying buffer to drop one indirection per iteration.
+	const long double* prev_buf = (column_index > 0) ? previous_column->column.data() : nullptr;
+
 	if (column_index > 0) {
 		size_t i = 0;
 		for (unsigned short path_id1 = 0; path_id1 < nr_paths; ++path_id1) {
 			for (unsigned short path_id2 = 0; path_id2 < nr_paths; ++path_id2) {
-				long double prev_forward = previous_column->column.at(i);
+				long double prev_forward = prev_buf[i];
 				helper_i[path_id1] += prev_forward;
 				helper_j[path_id2] += prev_forward;
 				helper_ij += prev_forward;
@@ -219,32 +224,49 @@ void HMM::compute_forward_column(size_t column_index) {
 		}
 	}
 
+	// stage-1 microopt: precompute the 3 transition probabilities once per column
+	// instead of calling compute_transition_prob() 3*nr_paths^2 times.
+	long double trans0 = 0.0L, trans1 = 0.0L, trans2 = 0.0L;
+	if (column_index > 0) {
+		trans0 = transition_probability_computer->compute_transition_prob(0);
+		trans1 = transition_probability_computer->compute_transition_prob(1);
+		trans2 = transition_probability_computer->compute_transition_prob(2);
+	}
+
 	// normalization
 	long double normalization_sum = 0.0L;
+
+	// stage-1 microopt: write directly into pre-sized buffer; no push_back in hot loop.
+	long double* cur_buf = current_column->column.data();
 
 	// state index
 	size_t i = 0;
 	// iterate over all pairs of current paths
 	for (unsigned short path_id1 = 0; path_id1 < nr_paths; ++path_id1) {
+		// stage-1 microopt: hoist allele1 lookup; only depends on path_id1.
+		unsigned short allele1 = this->column_indexer->get_allele(path_id1, column_index);
+		long double helper_i_p1 = helper_i[path_id1];
 		for (unsigned short path_id2 = 0; path_id2 < nr_paths; ++path_id2) {
 			long double previous_cell = 0.0L;
 			if (column_index > 0) {
-				previous_cell = transition_probability_computer->compute_transition_prob(0) * previous_column->column.at(i) +
-								transition_probability_computer->compute_transition_prob(1) * (helper_i[path_id1] + helper_j[path_id2] - 2*previous_column->column.at(i)) + 
-								transition_probability_computer->compute_transition_prob(2) * (helper_ij - helper_i[path_id1] - helper_j[path_id2] + previous_column->column.at(i));
+				// stage-1 microopt: load prev_buf[i] once (was 3 indirections + 3 .at() bounds checks).
+				long double prev_i = prev_buf[i];
+				long double helper_j_p2 = helper_j[path_id2];
+				previous_cell = trans0 * prev_i +
+								trans1 * (helper_i_p1 + helper_j_p2 - 2*prev_i) +
+								trans2 * (helper_ij - helper_i_p1 - helper_j_p2 + prev_i);
 			} else {
 				previous_cell = 1.0L;
 			}
 
 			// determine alleles current paths (ids) correspond to
-			unsigned short allele1 = this->column_indexer->get_allele(path_id1, column_index);
 			unsigned short allele2 = this->column_indexer->get_allele(path_id2, column_index);
 			// determine emission probability
 			long double emission_prob = emission_probability_computer.get_emission_probability(allele1,allele2);
 
 			// set entry of current column
 			long double current_cell = previous_cell * emission_prob;
-			current_column->column.push_back(current_cell);
+			cur_buf[i] = current_cell;
 			normalization_sum += current_cell;
 			i += 1;
 		}
@@ -312,15 +334,23 @@ void HMM::compute_backward_column(size_t column_index) {
 	vector<long double> helper_j(nr_paths);
 	long double helper_ij = 0.0;
 
+	// stage-1 microopt: cache buffer pointer to drop indirection.
+	const long double* prev_back_buf = (column_index < column_count - 1)
+		? this->previous_backward_column->column.data() : nullptr;
+
 	if (column_index < column_count - 1) {
 		size_t i = 0;
 		for (unsigned short path_id1 = 0; path_id1 < nr_paths; ++path_id1) {
 			unsigned short prev_allele1 = this->column_indexer->get_allele(path_id1, column_index + 1);
 			for (unsigned short path_id2 = 0; path_id2 < nr_paths; ++path_id2) {
-				unsigned short prev_allele2 =  this->column_indexer->get_allele(path_id2, column_index + 1);
-				helper_i[path_id1] += this->previous_backward_column->column.at(i) * emission_probability_computer->get_emission_probability(prev_allele1, prev_allele2);
-				helper_j[path_id2] += this->previous_backward_column->column.at(i) * emission_probability_computer->get_emission_probability(prev_allele1, prev_allele2);
-				helper_ij += this->previous_backward_column->column.at(i) * emission_probability_computer->get_emission_probability(prev_allele1, prev_allele2);
+				unsigned short prev_allele2 = this->column_indexer->get_allele(path_id2, column_index + 1);
+				// stage-1 microopt: compute the (prev_back * emission) product once
+				// instead of three times per cell.
+				long double term = prev_back_buf[i] *
+					emission_probability_computer->get_emission_probability(prev_allele1, prev_allele2);
+				helper_i[path_id1] += term;
+				helper_j[path_id2] += term;
+				helper_ij += term;
 				i += 1;
 			}
 		}
@@ -328,6 +358,16 @@ void HMM::compute_backward_column(size_t column_index) {
 
 	// construct new column
 	HMMColumn* current_column = new HMMColumn;
+	// stage-1 microopt: pre-size to avoid push_back capacity checks.
+	current_column->column.resize((size_t)nr_paths * nr_paths);
+
+	// stage-1 microopt: precompute 3 transition probabilities once.
+	long double trans0 = 0.0L, trans1 = 0.0L, trans2 = 0.0L;
+	if (column_index < column_count - 1) {
+		trans0 = transition_probability_computer->compute_transition_prob(0);
+		trans1 = transition_probability_computer->compute_transition_prob(1);
+		trans2 = transition_probability_computer->compute_transition_prob(2);
+	}
 
 	// normalization
 	long double normalization_sum = 0.0L;
@@ -335,37 +375,47 @@ void HMM::compute_backward_column(size_t column_index) {
 	// normalization of forward-backward
 	long double normalization_f_b = 0.0L;
 
+	// stage-1 microopt: cache forward_column buffer pointer too.
+	const long double* fwd_buf = forward_column ? forward_column->column.data() : nullptr;
+	long double* cur_back_buf = current_column->column.data();
+	long double fwd_norm = forward_column ? forward_column->forward_normalization_sum : 1.0L;
+
 	// state index
 	size_t i = 0;
 	// iterate over all pairs of current paths
 	for (unsigned short path_id1 = 0; path_id1 < nr_paths; ++path_id1) {
+		// stage-1 microopt: hoist allele1 + prev_allele1 (only depend on path_id1).
+		unsigned short allele1 = this->column_indexer->get_allele(path_id1, column_index);
+		unsigned short prev_allele1 = (column_index < column_count - 1)
+			? this->column_indexer->get_allele(path_id1, column_index + 1) : 0;
+		long double helper_i_p1 = helper_i[path_id1];
 		for (unsigned short path_id2 = 0; path_id2 < nr_paths; ++path_id2) {
 			// get alleles on current paths
-			unsigned short allele1 = this->column_indexer->get_allele(path_id1, column_index);
 			unsigned short allele2 = this->column_indexer->get_allele(path_id2, column_index);
 			long double current_cell = 0.0L;
 			if (column_index < column_count - 1) {
 				// get alleles on previous paths, assuming indexes are same as current column
-				unsigned short prev_allele1 = this->column_indexer->get_allele(path_id1, column_index + 1);
 				unsigned short prev_allele2 = this->column_indexer->get_allele(path_id2, column_index + 1);
-				long double helper_cell = this->previous_backward_column->column.at(i) * emission_probability_computer->get_emission_probability(prev_allele1, prev_allele2);
+				long double helper_cell = prev_back_buf[i] *
+					emission_probability_computer->get_emission_probability(prev_allele1, prev_allele2);
+				long double helper_j_p2 = helper_j[path_id2];
 				// iterate over previous column (ahead of this)
-				current_cell =	transition_probability_computer->compute_transition_prob(0) * helper_cell +
-								transition_probability_computer->compute_transition_prob(1) * (helper_i[path_id1] + helper_j[path_id2] - 2*helper_cell) +
-								transition_probability_computer->compute_transition_prob(2) * (helper_ij - helper_i[path_id1] - helper_j[path_id2] + helper_cell);
+				current_cell =	trans0 * helper_cell +
+								trans1 * (helper_i_p1 + helper_j_p2 - 2*helper_cell) +
+								trans2 * (helper_ij - helper_i_p1 - helper_j_p2 + helper_cell);
 			} else {
 				current_cell = 1.0L;
 			}
 			// store computed backward prob in column
-			current_column->column.push_back(current_cell);
+			cur_back_buf[i] = current_cell;
 			normalization_sum += current_cell;
 
 			// compute forward_prob * backward_prob
-			long double forward_backward_prob = forward_column->column.at(i) * current_cell;
+			long double forward_backward_prob = fwd_buf[i] * current_cell;
 			normalization_f_b += forward_backward_prob;
 
 			// update genotype likelihood
-			this->genotyping_result.at(variant_id).add_to_likelihood(allele1, allele2, forward_backward_prob * forward_column->forward_normalization_sum);
+			this->genotyping_result.at(variant_id).add_to_likelihood(allele1, allele2, forward_backward_prob * fwd_norm);
 			i += 1;
 		}
 	}
