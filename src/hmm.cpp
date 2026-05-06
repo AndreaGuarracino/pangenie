@@ -131,7 +131,7 @@ void HMM::compute_viterbi_path() {
 	// find best value (+ index) in last column
 	size_t best_index = 0;
 	double best_value = 0.0;
-	HMMColumn* last_column = this->viterbi_columns.at(column_count-1);
+	HMMColumn* last_column = this->viterbi_columns[column_count-1];
 	assert (last_column != nullptr);
 	for (size_t i = 0; i < last_column->column.size(); ++i) {
 		double entry = last_column->column.at(i);
@@ -167,7 +167,7 @@ void HMM::compute_viterbi_path() {
 		if (column_index == 0) break;
 
 		// update best index 
-		best_index = this->viterbi_backtrace_columns.at(column_index)->at(best_index);
+		best_index = this->viterbi_backtrace_columns[column_index]->at(best_index);
 		column_index -= 1;
 	}
 }
@@ -287,7 +287,7 @@ void HMM::compute_forward_column(size_t column_index) {
 	} else {
 		current_column->forward_normalization_sum = 1.0;
 	}
-	this->forward_columns.at(column_index) = current_column;
+	this->forward_columns[column_index] = current_column;
 
 	if (transition_probability_computer != nullptr) {
 		delete transition_probability_computer;
@@ -302,7 +302,7 @@ void HMM::compute_backward_column(size_t column_index) {
 	// get previous probabilitycomputers
 	TransitionProbabilityComputer* transition_probability_computer = nullptr;
 	EmissionProbabilityComputer* emission_probability_computer = nullptr;
-	HMMColumn* forward_column = this->forward_columns.at(column_index);
+	HMMColumn* forward_column = this->forward_columns[column_index];
 	
 	// nr of paths
 	unsigned short nr_paths = column_indexer->nr_paths();
@@ -326,7 +326,7 @@ void HMM::compute_backward_column(size_t column_index) {
 			}
 		}
 
-		forward_column = this->forward_columns.at(column_index);
+		forward_column = this->forward_columns[column_index];
 		assert (forward_column != nullptr);
 	}
 
@@ -484,9 +484,9 @@ void HMM::compute_backward_column(size_t column_index) {
 	if (emission_probability_computer != nullptr) delete emission_probability_computer;
 
 	// delete forward column as it's not needed any more
-	if (this->forward_columns.at(column_index) != nullptr) {
-		delete this->forward_columns.at(column_index);
-		this->forward_columns.at(column_index) = nullptr;
+	if (this->forward_columns[column_index] != nullptr) {
+		delete this->forward_columns[column_index];
+		this->forward_columns[column_index] = nullptr;
 	}
 
 	if (transition_probability_computer != nullptr) {
@@ -591,9 +591,9 @@ void HMM::compute_viterbi_column(size_t column_index) {
 	}
 
 	// store the column
-	this->viterbi_columns.at(column_index) = current_column;
+	this->viterbi_columns[column_index] = current_column;
 	if (column_index > 0) assert(backtrace_column->size() == this->column_indexer->nr_paths()*this->column_indexer->nr_paths());
-	this->viterbi_backtrace_columns.at(column_index) = backtrace_column;
+	this->viterbi_backtrace_columns[column_index] = backtrace_column;
 	
 	if (transition_probability_computer != nullptr) {
 		delete transition_probability_computer;
