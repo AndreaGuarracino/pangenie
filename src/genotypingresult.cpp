@@ -22,7 +22,7 @@ pair<unsigned short, unsigned short> genotype_from_alleles (unsigned short allel
 	}
 }
 
-void GenotypingResult::add_to_likelihood(unsigned short allele1, unsigned short allele2, long double value) {
+void GenotypingResult::add_to_likelihood(unsigned short allele1, unsigned short allele2, double value) {
 	pair<unsigned short, unsigned short> genotype = genotype_from_alleles(allele1, allele2);
 	this->genotype_to_likelihood[genotype] += value;
 }
@@ -35,23 +35,23 @@ void GenotypingResult::add_second_haplotype_allele(unsigned short allele) {
 	this->haplotype_2 = allele;
 }
 
-long double GenotypingResult::get_genotype_likelihood (unsigned short allele1, unsigned short allele2) const {
+double GenotypingResult::get_genotype_likelihood (unsigned short allele1, unsigned short allele2) const {
 	pair<unsigned short, unsigned short> genotype = genotype_from_alleles(allele1, allele2);
 	auto it = this->genotype_to_likelihood.find(genotype);
 	if (it != this->genotype_to_likelihood.end()) {
 		return this->genotype_to_likelihood.at(genotype);
 	} else {
-		return 0.0L;
+		return 0.0;
 	}
 }
 
-vector<long double> GenotypingResult::get_all_likelihoods (size_t nr_alleles) const {
+vector<double> GenotypingResult::get_all_likelihoods (size_t nr_alleles) const {
 	assert (nr_alleles < 65536);
 
 	// determine number of possible genotypes
 	size_t nr_genotypes = (nr_alleles * (nr_alleles + 1)) / 2;
 
-	vector<long double> result(nr_genotypes, 0.0L);
+	vector<double> result(nr_genotypes, 0.0);
 	for (auto const& l : this->genotype_to_likelihood) {
 		unsigned short allele1 = l.first.first;
 		unsigned short allele2 = l.first.second;
@@ -70,7 +70,7 @@ vector<long double> GenotypingResult::get_all_likelihoods (size_t nr_alleles) co
 GenotypingResult GenotypingResult::get_specific_likelihoods (vector<unsigned short>& alleles) const {
 	GenotypingResult result;
 	assert (alleles.size() < 65536);
-	long double sum = 0.0L;
+	double sum = 0.0;
 	// all given alleles
 	unordered_set<unsigned short> alleles_to_consider (alleles.begin(), alleles.end());
 
@@ -100,10 +100,10 @@ GenotypingResult GenotypingResult::get_specific_likelihoods (vector<unsigned sho
 	GenotypingResult result;
 	size_t nr_alleles = alleles.size();
 	assert (nr_alleles < 65536);
-	long double sum = 0.0L;
+	double sum = 0.0;
 	for (unsigned short i = 0; i < nr_alleles; ++i) {
 		for (unsigned short j = i; j < nr_alleles; ++j) {
-			long double likelihood = this->get_genotype_likelihood(alleles[i], alleles[j]);
+			double likelihood = this->get_genotype_likelihood(alleles[i], alleles[j]);
 			if (this->haplotype_1 == alleles[i]) result.haplotype_1 = i;
 			if (this->haplotype_2 == alleles[j]) result.haplotype_2 = j;
 			result.add_to_likelihood(i, j, likelihood);
@@ -117,7 +117,7 @@ GenotypingResult GenotypingResult::get_specific_likelihoods (vector<unsigned sho
 
 size_t GenotypingResult::get_genotype_quality (unsigned short allele1, unsigned short allele2) const {
 	// check if likelihoods are normalized
-	long double sum = 0.0;
+	double sum = 0.0;
 	for (const auto& l : this->genotype_to_likelihood) {
 		sum += l.second;
 	}
@@ -127,7 +127,7 @@ size_t GenotypingResult::get_genotype_quality (unsigned short allele1, unsigned 
 	}
 	
 	// compute genotype quality
-	long double prob_wrong = 1.0L - get_genotype_likelihood(allele1, allele2);
+	double prob_wrong = 1.0 - get_genotype_likelihood(allele1, allele2);
 	if (prob_wrong > 0.0) {
 		return (size_t) (-10 * log10(prob_wrong));
 	} else {
@@ -140,7 +140,7 @@ pair<unsigned short, unsigned short> GenotypingResult::get_haplotype() const {
 	return make_pair(this->haplotype_1, this->haplotype_2);
 }
 
-void GenotypingResult::divide_likelihoods_by(long double value) {
+void GenotypingResult::divide_likelihoods_by(double value) {
 	for (auto it = this->genotype_to_likelihood.begin(); it != this->genotype_to_likelihood.end(); ++it) {
 		it->second = it->second / value;
 	}
@@ -152,7 +152,7 @@ pair<int, int> GenotypingResult::get_likeliest_genotype() const {
 		return pair<int,int>(-1,-1);
 	}
 
-	long double best_value = 0.0L;
+	double best_value = 0.0;
 	pair<unsigned short, unsigned short> best_genotype(0,0); 
 	for (auto const& l : this->genotype_to_likelihood) {
 		if (l.second >= best_value) {
@@ -172,7 +172,7 @@ pair<int, int> GenotypingResult::get_likeliest_genotype() const {
 	}
 
 	// if best genotype has likelihood 0 (this can happen if there is only one entry), return ./.
-	if (best_value > 0.0L) {
+	if (best_value > 0.0) {
 		return best_genotype;
 	} else {
 		return pair<int,int>(-1,-1);
@@ -199,7 +199,7 @@ void GenotypingResult::combine(GenotypingResult& likelihoods) {
 
 void GenotypingResult::normalize () {
 	// sum up probabilities
-	long double normalization_sum = 0.0L;
+	double normalization_sum = 0.0;
 	for (auto it = this->genotype_to_likelihood.begin(); it != this->genotype_to_likelihood.end(); ++it) {
 		normalization_sum += it->second;
 	}
@@ -231,6 +231,6 @@ bool GenotypingResult::contains_no_likelihoods() const {
 	return this->genotype_to_likelihood.empty();
 }
 
-const map < pair<unsigned short,unsigned short>, long double >& GenotypingResult::get_stored_likelihoods() const {
+const map < pair<unsigned short,unsigned short>, double >& GenotypingResult::get_stored_likelihoods() const {
 	return this->genotype_to_likelihood;
 }

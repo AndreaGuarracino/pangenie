@@ -219,7 +219,7 @@ TEST_CASE("Variant separate_variants_likelihoods", "Variant separate_variants_li
 
 	// computed genotype likelihoods
 	for (size_t i = 0; i < 3; ++i) {
-		vector<long double> computed = single_genotypes[i].get_all_likelihoods(2);
+		vector<double> computed = single_genotypes[i].get_all_likelihoods(2);
 		REQUIRE(computed.size() == expected[i].size());
 		for (size_t j = 0; j < expected[i].size(); ++j) {
 			REQUIRE(doubles_equal(computed[j], expected[i][j]));
@@ -598,7 +598,7 @@ TEST_CASE("Variant separate_variants_likelihoods_uncovered", "Variant separate_v
 
 	// computed genotype likelihoods
 	for (size_t i = 0; i < 2; ++i) {
-		vector<long double> computed = single_genotypes[i].get_all_likelihoods(nr_alleles[i]);
+		vector<double> computed = single_genotypes[i].get_all_likelihoods(nr_alleles[i]);
 		REQUIRE(computed.size() == expected[i].size());
 		for (size_t j = 0; j < expected[i].size(); ++j) {
 			REQUIRE(doubles_equal(computed[j], expected[i][j]));

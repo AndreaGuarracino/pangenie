@@ -25,7 +25,7 @@ TEST_CASE("HaplotypeSampler", "[HaplotypeSampler]"){
 	u2->insert_kmer(20, a2);
 	u2->insert_kmer(1, a2);
 
-	ProbabilityTable probs (0,1,21,0.0L);
+	ProbabilityTable probs (0,1,21,0.0);
 	probs.modify_probability(0, 20, CopyNumber(0.01,0.01,0.9));
 	probs.modify_probability(0, 1, CopyNumber(0.9,0.3,0.1));
 
@@ -174,7 +174,7 @@ TEST_CASE("HaplotypeSampler Viterbi", "[HaplotypeSampler Viterbi]") {
 
 	vector<shared_ptr<UniqueKmers>> unique_kmers = {u1,u2};
 	vector<unsigned int> best_scores;
-	HaplotypeSampler h(&unique_kmers,1, 1.26, 25000.0L, &best_scores);
+	HaplotypeSampler h(&unique_kmers,1, 1.26, 25000.0, &best_scores);
 	REQUIRE(best_scores.size() == 1);
 	REQUIRE(best_scores[0] == 6);
 
@@ -213,7 +213,7 @@ TEST_CASE("HaplotypeSampler Viterbi2", "[HaplotypeSampler Viterbi2]") {
 
 	vector<shared_ptr<UniqueKmers>> unique_kmers = {u1,u2};
 	vector<unsigned int> best_scores;
-	HaplotypeSampler h(&unique_kmers,2, 1.26, 25000.0L, &best_scores);
+	HaplotypeSampler h(&unique_kmers,2, 1.26, 25000.0, &best_scores);
 	REQUIRE(best_scores.size() == 2);
 	REQUIRE(best_scores[0] == 1);
 //	REQUIRE(best_scores[1] == 4); // without penalizing chosen allele
@@ -256,7 +256,7 @@ TEST_CASE("HaplotypeSampler Viterbi3", "[HaplotypeSampler Viterbi3]") {
 
 	vector<shared_ptr<UniqueKmers>> unique_kmers = {u1,u2};
 	vector<unsigned int> best_scores;
-	HaplotypeSampler h(&unique_kmers,2, 1.26, 25000.0L, &best_scores);
+	HaplotypeSampler h(&unique_kmers,2, 1.26, 25000.0, &best_scores);
 	REQUIRE(best_scores.size() == 2);
 	REQUIRE(best_scores[0] == 1);
 //	REQUIRE(best_scores[1] == 4); // without penalizing chosen allele
@@ -299,7 +299,7 @@ TEST_CASE("HaplotypeSampler update_unique_kmers", "[HaplotypeSampler update_uniq
 
 	vector<shared_ptr<UniqueKmers>> unique_kmers = {u1,u2};
 	vector<unsigned int> best_scores;
-	HaplotypeSampler h(&unique_kmers,2, 1.26, 25000.0L, &best_scores);
+	HaplotypeSampler h(&unique_kmers,2, 1.26, 25000.0, &best_scores);
 
 	SampledPaths s = h.get_sampled_paths();
 	REQUIRE(s.sampled_paths.size() == 2);
@@ -361,7 +361,7 @@ TEST_CASE("HaplotypeSampler update_unique_kmers_reference", "[HaplotypeSampler u
 
 	vector<shared_ptr<UniqueKmers>> unique_kmers = {u1,u2};
 	vector<unsigned int> best_scores;
-	HaplotypeSampler h(&unique_kmers,2, 1.26, 25000.0L, &best_scores, true);
+	HaplotypeSampler h(&unique_kmers,2, 1.26, 25000.0, &best_scores, true);
 
 	SampledPaths s = h.get_sampled_paths();
 	REQUIRE(s.sampled_paths.size() == 3);

@@ -25,7 +25,7 @@ TEST_CASE("HMM get_genotyping_result", "[HMM get_genotyping_result]") {
 	u2->insert_kmer(5, a2);
 	u2->set_coverage(5);
 
-	ProbabilityTable probs(5, 10, 30, 0.0L);
+	ProbabilityTable probs(5, 10, 30, 0.0);
 	probs.modify_probability(5, 10, CopyNumber(0.1,0.9,0.1));
 	probs.modify_probability(5, 20, CopyNumber(0.01,0.01,0.9));
 	probs.modify_probability(5, 5, CopyNumber(0.9,0.3,0.1));
@@ -67,7 +67,7 @@ TEST_CASE("HMM skip_reference_position", "[HMM skip_reference_position]") {
 	u3->insert_kmer(5, a2);
 	u3->set_coverage(5);
 
-	ProbabilityTable probs(5, 10, 30, 0.0L);
+	ProbabilityTable probs(5, 10, 30, 0.0);
 	probs.modify_probability(5, 10, CopyNumber(0.1,0.9,0.1));
 	probs.modify_probability(5, 20, CopyNumber(0.01,0.01,0.9));
 	probs.modify_probability(5, 5, CopyNumber(0.9,0.3,0.1));
@@ -110,7 +110,7 @@ TEST_CASE("HMM get_genotyping_result_normalized", "[HMM get_genotyping_result_no
 	u2->insert_kmer(20, a1);
 	u2->insert_kmer(1, a2);
 	
-	ProbabilityTable probs (0, 5, 30, 0.0L);
+	ProbabilityTable probs (0, 5, 30, 0.0);
 	probs.modify_probability(0, 10, CopyNumber(0.1,0.9,0.1,0.0));
 	probs.modify_probability(0, 20, CopyNumber(0.01,0.01,0.9,0.0));
 	probs.modify_probability(0, 1, CopyNumber(0.9,0.3,0.1,0.0));
@@ -145,7 +145,7 @@ TEST_CASE("HMM undefined_alleles1", "[HMM get_undefined_alleles1]") {
 	u2->insert_kmer(20, a1);
 	u2->insert_kmer(1, a2);
 
-	ProbabilityTable probs(0,1,21,0.0L);
+	ProbabilityTable probs(0,1,21,0.0);
 	probs.modify_probability(0,10,CopyNumber(0.1,0.9,0.1));
 	probs.modify_probability(0,20,CopyNumber(0.01,0.01,0.9));
 	probs.modify_probability(0,1,CopyNumber(0.9,0.3,0.1));
@@ -194,7 +194,7 @@ TEST_CASE("HMM undefined_alleles2", "[HMM get_undefined_alleles1]") {
 	u2->insert_kmer(20, a2);
 	u2->insert_kmer(1, a1);
 
-	ProbabilityTable probs (0,1,21,0.0L);
+	ProbabilityTable probs (0,1,21,0.0);
 	probs.modify_probability(0, 20, CopyNumber(0.01,0.01,0.9));
 	probs.modify_probability(0, 1, CopyNumber(0.9,0.3,0.1));
 
@@ -249,7 +249,7 @@ TEST_CASE("HMM only_undefined_alleles", "[HMM only_undefined_alleles]") {
 	u2->insert_kmer(20, a1);
 	u2->insert_kmer(1, a2);
 
-	ProbabilityTable probs (0,1,21,0.0L);
+	ProbabilityTable probs (0,1,21,0.0);
 	probs.modify_probability(0,10,CopyNumber(0.1,0.9,0.1));
 	probs.modify_probability(0,20,CopyNumber(0.01,0.01,0.9));
 	probs.modify_probability(0,1,CopyNumber(0.9,0.3,0.1));
@@ -295,7 +295,7 @@ TEST_CASE("HMM no_alt_allele", "[HMM no_alt_allele]") {
 	u->insert_kmer(10, a1);
 	u->insert_kmer(5, a2);
 
-	ProbabilityTable probs (0,1,11, 0.0L);
+	ProbabilityTable probs (0,1,11, 0.0);
 	probs.modify_probability(0,10,CopyNumber(0.1,0.2,0.9));
 	probs.modify_probability(0,5,CopyNumber(0.3,0.4,0.1));
 
@@ -320,7 +320,7 @@ TEST_CASE("HMM no_ref_allele", "[HMM no_ref_allele]") {
 	u->insert_kmer (20, a1);
 	u->insert_kmer (10, a2);
 
-	ProbabilityTable probs(0, 1, 21, 0.0L);
+	ProbabilityTable probs(0, 1, 21, 0.0);
 	probs.modify_probability(0, 20, CopyNumber(0.1,0.2,0.9));
 	probs.modify_probability(0, 10, CopyNumber(0.3,0.4,0.1));
 
@@ -404,7 +404,7 @@ TEST_CASE("HMM no_unique_kmers3", "[HMM no_unique_kmers3]") {
 	u3->insert_kmer(10, a1);
 	u3->insert_kmer(9, a2);
 
-	ProbabilityTable probs (0,1,21,0.0L);
+	ProbabilityTable probs (0,1,21,0.0);
 	probs.modify_probability(0, 10, CopyNumber(0.1,0.9,0.1));
 	probs.modify_probability(0, 9, CopyNumber(0.1,0.8,0.1));
 
@@ -482,7 +482,7 @@ TEST_CASE("HMM only_kmers", "[HMM only_kmers]") {
 	u3->insert_kmer(5, a1);
 	u3->insert_kmer(7, a2);
 
-	ProbabilityTable probs (0,1,21,0.0L);
+	ProbabilityTable probs (0,1,21,0.0);
 	probs.modify_probability(0,10,CopyNumber(0.05,0.9,0.05));
 	probs.modify_probability(0,12,CopyNumber(0.1,0.7,0.2));
 	probs.modify_probability(0,1,CopyNumber(0.9,0.07,0.03));
@@ -526,7 +526,7 @@ TEST_CASE("HMM emissions_zero", "[HMM emissions_zero]") {
 	u3->insert_kmer(10, a1);
 	u3->insert_kmer(10, a2);
 
-	ProbabilityTable probs (0,1,11,0.0L);
+	ProbabilityTable probs (0,1,11,0.0);
 	probs.modify_probability(0, 10, CopyNumber(0.0,1.0,0.0));
 	probs.modify_probability(0, 0, CopyNumber(1.0,0.0,0.0));
 
@@ -567,7 +567,7 @@ TEST_CASE("HMM underflow", "[HMM underflow]") {
 	u3->insert_kmer(10, a1);
 	u3->insert_kmer(10, a2);
 
-	ProbabilityTable probs (0,1,21,0.0L);
+	ProbabilityTable probs (0,1,21,0.0);
 	probs.modify_probability(0,10,CopyNumber(0.0,1.0,0.0));
 	probs.modify_probability(0,20,CopyNumber(0.0,0.0,1.0));
 	probs.modify_probability(0,0,CopyNumber(1.0,0.0,0.0));
@@ -605,7 +605,7 @@ TEST_CASE("HMM get_genotyping_result_neutral_kmers", "[HMM get_genotyping_result
 	u2->insert_kmer(15, a3);
 	u2->insert_kmer(9, a3);
 
-	ProbabilityTable probs (0,1,21,0.0L);
+	ProbabilityTable probs (0,1,21,0.0);
 	probs.modify_probability(0,10,CopyNumber(0.1,0.9,0.1));
 	probs.modify_probability(0,12,CopyNumber(0.05, 0.45, 0.5));
 	probs.modify_probability(0,5,CopyNumber(0.4, 0.5, 0.1));
@@ -649,7 +649,7 @@ TEST_CASE("HMM only_paths", "[HMM only_paths]") {
 	u2->insert_kmer(20, a1);
 	u2->insert_kmer(1, a2);
 
-	ProbabilityTable probs (0,1,21,0.0L);
+	ProbabilityTable probs (0,1,21,0.0);
 	probs.modify_probability(0,10,CopyNumber(0.1,0.9,0.1));
 	probs.modify_probability(0,20,CopyNumber(0.01,0.01,0.9));
 	probs.modify_probability(0,1,CopyNumber(0.9,0.3,0.1));
@@ -680,7 +680,7 @@ TEST_CASE("HMM no_only_paths2", "[HMM only_paths2]") {
 	shared_ptr<UniqueKmers> u2 = shared_ptr<UniqueKmers>(new MultiallelicUniqueKmers (3000, path_to_allele));
 	u2->insert_kmer(12,a2);
 
-	ProbabilityTable probs (0,1,13,0.0L);
+	ProbabilityTable probs (0,1,13,0.0);
 	probs.modify_probability(0,12,CopyNumber(0.05, 0.8, 0.15));
 
 	vector<shared_ptr<UniqueKmers>> unique_kmers = {u1, u2};
@@ -718,7 +718,7 @@ TEST_CASE("HMM combine_results", "[HMM combine_results]") {
 	u2->insert_kmer(5, a2);
 	u2->set_coverage(5);
 
-	ProbabilityTable probs(5, 10, 30, 0.0L);
+	ProbabilityTable probs(5, 10, 30, 0.0);
 	probs.modify_probability(5, 10, CopyNumber(0.1,0.9,0.1));
 	probs.modify_probability(5, 20, CopyNumber(0.01,0.01,0.9));
 	probs.modify_probability(5, 5, CopyNumber(0.9,0.3,0.1));
@@ -744,7 +744,7 @@ TEST_CASE("HMM combine_results", "[HMM combine_results]") {
 	u2 = shared_ptr<UniqueKmers>(new MultiallelicUniqueKmers (3000, path_to_allele));
 	u2->insert_kmer(12,a2);
 
-	probs = ProbabilityTable(0,1,13,0.0L);
+	probs = ProbabilityTable(0,1,13,0.0);
 	probs.modify_probability(0,12,CopyNumber(0.05, 0.8, 0.15));
 
 	unique_kmers = {u1, u2};
@@ -785,7 +785,7 @@ TEST_CASE("HMM normalize", "[HMM normalize]") {
 	shared_ptr<UniqueKmers> u2 = shared_ptr<UniqueKmers>(new MultiallelicUniqueKmers (3000, path_to_allele));
 	u2->insert_kmer(12,a2);
 
-	ProbabilityTable probs (0,1,13,0.0L);
+	ProbabilityTable probs (0,1,13,0.0);
 	probs.modify_probability(0,12,CopyNumber(0.05, 0.8, 0.15));
 
 	vector<shared_ptr<UniqueKmers>> unique_kmers = {u1, u2};

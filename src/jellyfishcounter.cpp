@@ -106,11 +106,11 @@ size_t JellyfishCounter::getKmerAbundance(jellyfish::mer_dna jelly_kmer){
 size_t JellyfishCounter::computeKmerCoverage(size_t genome_kmers) {
 	const auto jf_ary = this->jellyfish_hash->ary();
 	const auto end = jf_ary->end();
-	long double result = 0.0L;
-	long double genome = 1.0L * genome_kmers;
+	double result = 0.0;
+	double genome = 1.0 * genome_kmers;
 	for (auto it = jf_ary->begin(); it != end; ++it) {
 		auto& key_val = *it;
-		long double count = 1.0L * key_val.second;
+		double count = 1.0 * key_val.second;
 		result += (count/genome);
 	}
 	return (size_t) ceil(result);

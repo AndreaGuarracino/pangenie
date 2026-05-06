@@ -17,7 +17,7 @@ void print_dpcolumn(DPColumn* column) {
 	cout << "--------" << endl;
 }
 
-HaplotypeSampler::HaplotypeSampler(vector<shared_ptr<UniqueKmers>>* unique_kmers, size_t size, double recombrate, long double effective_N, vector<unsigned int>* best_scores, bool add_reference, string path_output, string chromosome, unsigned short allele_penalty, double* time)
+HaplotypeSampler::HaplotypeSampler(vector<shared_ptr<UniqueKmers>>* unique_kmers, size_t size, double recombrate, double effective_N, vector<unsigned int>* best_scores, bool add_reference, string path_output, string chromosome, unsigned short allele_penalty, double* time)
 	:unique_kmers(unique_kmers),
 	 recombrate(recombrate),
 	 effective_N(effective_N),

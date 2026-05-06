@@ -13,7 +13,7 @@
 using namespace std;
 
 
-void print_column(vector<long double>* column, ColumnIndexer* indexer) {
+void print_column(vector<double>* column, ColumnIndexer* indexer) {
 	for (size_t i = 0; i < column->size(); ++i) {
 		pair<size_t,size_t> paths = indexer->get_path_ids_at(i);
 		cout << setprecision(15) << column->at(i) << " paths: " << paths.first << " " <<  paths.second << endl;
@@ -22,7 +22,7 @@ void print_column(vector<long double>* column, ColumnIndexer* indexer) {
 }
 
 
-HMM::HMM(vector<shared_ptr<UniqueKmers>>* unique_kmers, ProbabilityTable* probabilities, bool run_genotyping, bool run_phasing, double recombrate, bool uniform, long double effective_N, vector<unsigned short>* only_paths, bool normalize)
+HMM::HMM(vector<shared_ptr<UniqueKmers>>* unique_kmers, ProbabilityTable* probabilities, bool run_genotyping, bool run_phasing, double recombrate, bool uniform, double effective_N, vector<unsigned short>* only_paths, bool normalize)
 	: unique_kmers(unique_kmers),
 	 probabilities(probabilities),
 	 genotyping_result(unique_kmers->size()),
@@ -130,11 +130,11 @@ void HMM::compute_viterbi_path() {
 
 	// find best value (+ index) in last column
 	size_t best_index = 0;
-	long double best_value = 0.0L;
+	double best_value = 0.0;
 	HMMColumn* last_column = this->viterbi_columns.at(column_count-1);
 	assert (last_column != nullptr);
 	for (size_t i = 0; i < last_column->column.size(); ++i) {
-		long double entry = last_column->column.at(i);
+		double entry = last_column->column.at(i);
 		if (entry >= best_value) {
 			best_value = entry;
 			best_index = i;
@@ -204,18 +204,18 @@ void HMM::compute_forward_column(size_t column_index) {
 	// emission probability computer
 	EmissionProbabilityComputer emission_probability_computer(this->unique_kmers->at(variant_id), this->probabilities);
 
-	vector<long double> helper_i(nr_paths);
-	vector<long double> helper_j(nr_paths);
-	long double helper_ij = 0.0;
+	vector<double> helper_i(nr_paths);
+	vector<double> helper_j(nr_paths);
+	double helper_ij = 0.0;
 
 	// stage-1 microopt: cache the underlying buffer to drop one indirection per iteration.
-	const long double* prev_buf = (column_index > 0) ? previous_column->column.data() : nullptr;
+	const double* prev_buf = (column_index > 0) ? previous_column->column.data() : nullptr;
 
 	if (column_index > 0) {
 		size_t i = 0;
 		for (unsigned short path_id1 = 0; path_id1 < nr_paths; ++path_id1) {
 			for (unsigned short path_id2 = 0; path_id2 < nr_paths; ++path_id2) {
-				long double prev_forward = prev_buf[i];
+				double prev_forward = prev_buf[i];
 				helper_i[path_id1] += prev_forward;
 				helper_j[path_id2] += prev_forward;
 				helper_ij += prev_forward;
@@ -226,7 +226,7 @@ void HMM::compute_forward_column(size_t column_index) {
 
 	// stage-1 microopt: precompute the 3 transition probabilities once per column
 	// instead of calling compute_transition_prob() 3*nr_paths^2 times.
-	long double trans0 = 0.0L, trans1 = 0.0L, trans2 = 0.0L;
+	double trans0 = 0.0, trans1 = 0.0, trans2 = 0.0;
 	if (column_index > 0) {
 		trans0 = transition_probability_computer->compute_transition_prob(0);
 		trans1 = transition_probability_computer->compute_transition_prob(1);
@@ -234,10 +234,10 @@ void HMM::compute_forward_column(size_t column_index) {
 	}
 
 	// normalization
-	long double normalization_sum = 0.0L;
+	double normalization_sum = 0.0;
 
 	// stage-1 microopt: write directly into pre-sized buffer; no push_back in hot loop.
-	long double* cur_buf = current_column->column.data();
+	double* cur_buf = current_column->column.data();
 
 	// state index
 	size_t i = 0;
@@ -245,47 +245,47 @@ void HMM::compute_forward_column(size_t column_index) {
 	for (unsigned short path_id1 = 0; path_id1 < nr_paths; ++path_id1) {
 		// stage-1 microopt: hoist allele1 lookup; only depends on path_id1.
 		unsigned short allele1 = this->column_indexer->get_allele(path_id1, column_index);
-		long double helper_i_p1 = helper_i[path_id1];
+		double helper_i_p1 = helper_i[path_id1];
 		for (unsigned short path_id2 = 0; path_id2 < nr_paths; ++path_id2) {
-			long double previous_cell = 0.0L;
+			double previous_cell = 0.0;
 			if (column_index > 0) {
 				// stage-1 microopt: load prev_buf[i] once (was 3 indirections + 3 .at() bounds checks).
-				long double prev_i = prev_buf[i];
-				long double helper_j_p2 = helper_j[path_id2];
+				double prev_i = prev_buf[i];
+				double helper_j_p2 = helper_j[path_id2];
 				previous_cell = trans0 * prev_i +
 								trans1 * (helper_i_p1 + helper_j_p2 - 2*prev_i) +
 								trans2 * (helper_ij - helper_i_p1 - helper_j_p2 + prev_i);
 			} else {
-				previous_cell = 1.0L;
+				previous_cell = 1.0;
 			}
 
 			// determine alleles current paths (ids) correspond to
 			unsigned short allele2 = this->column_indexer->get_allele(path_id2, column_index);
 			// determine emission probability
-			long double emission_prob = emission_probability_computer.get_emission_probability(allele1,allele2);
+			double emission_prob = emission_probability_computer.get_emission_probability(allele1,allele2);
 
 			// set entry of current column
-			long double current_cell = previous_cell * emission_prob;
+			double current_cell = previous_cell * emission_prob;
 			cur_buf[i] = current_cell;
 			normalization_sum += current_cell;
 			i += 1;
 		}
 	}
 
-	if (normalization_sum > 0.0L) {
+	if (normalization_sum > 0.0) {
 		// normalize the entries in current column to sum up to 1
-		transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(), bind(divides<long double>(), placeholders::_1, normalization_sum));
+		transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(), bind(divides<double>(), placeholders::_1, normalization_sum));
 	} else {
-		long double uniform = 1.0L / (long double) current_column->column.size();
-		transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(),  [uniform](long double c) -> long double {return uniform;});
+		double uniform = 1.0 / (double) current_column->column.size();
+		transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(),  [uniform](double c) -> double {return uniform;});
 //		cerr << "Underflow in Forward pass at position: " << this->unique_kmers->at(column_index)->get_variant_position() << ". Column set to uniform." << endl;
 	}
 
 	// store the column
-	if (normalization_sum > 0.0L) {
+	if (normalization_sum > 0.0) {
 		current_column->forward_normalization_sum = normalization_sum;
 	} else {
-		current_column->forward_normalization_sum = 1.0L;
+		current_column->forward_normalization_sum = 1.0;
 	}
 	this->forward_columns.at(column_index) = current_column;
 
@@ -330,12 +330,12 @@ void HMM::compute_backward_column(size_t column_index) {
 		assert (forward_column != nullptr);
 	}
 
-	vector<long double> helper_i(nr_paths);
-	vector<long double> helper_j(nr_paths);
-	long double helper_ij = 0.0;
+	vector<double> helper_i(nr_paths);
+	vector<double> helper_j(nr_paths);
+	double helper_ij = 0.0;
 
 	// stage-1 microopt: cache buffer pointer to drop indirection.
-	const long double* prev_back_buf = (column_index < column_count - 1)
+	const double* prev_back_buf = (column_index < column_count - 1)
 		? this->previous_backward_column->column.data() : nullptr;
 
 	if (column_index < column_count - 1) {
@@ -346,7 +346,7 @@ void HMM::compute_backward_column(size_t column_index) {
 				unsigned short prev_allele2 = this->column_indexer->get_allele(path_id2, column_index + 1);
 				// stage-1 microopt: compute the (prev_back * emission) product once
 				// instead of three times per cell.
-				long double term = prev_back_buf[i] *
+				double term = prev_back_buf[i] *
 					emission_probability_computer->get_emission_probability(prev_allele1, prev_allele2);
 				helper_i[path_id1] += term;
 				helper_j[path_id2] += term;
@@ -362,7 +362,7 @@ void HMM::compute_backward_column(size_t column_index) {
 	current_column->column.resize((size_t)nr_paths * nr_paths);
 
 	// stage-1 microopt: precompute 3 transition probabilities once.
-	long double trans0 = 0.0L, trans1 = 0.0L, trans2 = 0.0L;
+	double trans0 = 0.0, trans1 = 0.0, trans2 = 0.0;
 	if (column_index < column_count - 1) {
 		trans0 = transition_probability_computer->compute_transition_prob(0);
 		trans1 = transition_probability_computer->compute_transition_prob(1);
@@ -370,15 +370,15 @@ void HMM::compute_backward_column(size_t column_index) {
 	}
 
 	// normalization
-	long double normalization_sum = 0.0L;
+	double normalization_sum = 0.0;
 
 	// normalization of forward-backward
-	long double normalization_f_b = 0.0L;
+	double normalization_f_b = 0.0;
 
 	// stage-1 microopt: cache forward_column buffer pointer too.
-	const long double* fwd_buf = forward_column ? forward_column->column.data() : nullptr;
-	long double* cur_back_buf = current_column->column.data();
-	long double fwd_norm = forward_column ? forward_column->forward_normalization_sum : 1.0L;
+	const double* fwd_buf = forward_column ? forward_column->column.data() : nullptr;
+	double* cur_back_buf = current_column->column.data();
+	double fwd_norm = forward_column ? forward_column->forward_normalization_sum : 1.0;
 
 	// state index
 	size_t i = 0;
@@ -388,30 +388,30 @@ void HMM::compute_backward_column(size_t column_index) {
 		unsigned short allele1 = this->column_indexer->get_allele(path_id1, column_index);
 		unsigned short prev_allele1 = (column_index < column_count - 1)
 			? this->column_indexer->get_allele(path_id1, column_index + 1) : 0;
-		long double helper_i_p1 = helper_i[path_id1];
+		double helper_i_p1 = helper_i[path_id1];
 		for (unsigned short path_id2 = 0; path_id2 < nr_paths; ++path_id2) {
 			// get alleles on current paths
 			unsigned short allele2 = this->column_indexer->get_allele(path_id2, column_index);
-			long double current_cell = 0.0L;
+			double current_cell = 0.0;
 			if (column_index < column_count - 1) {
 				// get alleles on previous paths, assuming indexes are same as current column
 				unsigned short prev_allele2 = this->column_indexer->get_allele(path_id2, column_index + 1);
-				long double helper_cell = prev_back_buf[i] *
+				double helper_cell = prev_back_buf[i] *
 					emission_probability_computer->get_emission_probability(prev_allele1, prev_allele2);
-				long double helper_j_p2 = helper_j[path_id2];
+				double helper_j_p2 = helper_j[path_id2];
 				// iterate over previous column (ahead of this)
 				current_cell =	trans0 * helper_cell +
 								trans1 * (helper_i_p1 + helper_j_p2 - 2*helper_cell) +
 								trans2 * (helper_ij - helper_i_p1 - helper_j_p2 + helper_cell);
 			} else {
-				current_cell = 1.0L;
+				current_cell = 1.0;
 			}
 			// store computed backward prob in column
 			cur_back_buf[i] = current_cell;
 			normalization_sum += current_cell;
 
 			// compute forward_prob * backward_prob
-			long double forward_backward_prob = fwd_buf[i] * current_cell;
+			double forward_backward_prob = fwd_buf[i] * current_cell;
 			normalization_f_b += forward_backward_prob;
 
 			// update genotype likelihood
@@ -421,11 +421,11 @@ void HMM::compute_backward_column(size_t column_index) {
 	}
 
 
-	if (normalization_sum > 0.0L) {
-		transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(), bind(divides<long double>(), placeholders::_1, normalization_sum));
+	if (normalization_sum > 0.0) {
+		transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(), bind(divides<double>(), placeholders::_1, normalization_sum));
 	} else {
-		long double uniform = 1.0L / (long double) current_column->column.size();
-		transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(), [uniform](long double c) -> long double {return uniform;});
+		double uniform = 1.0 / (double) current_column->column.size();
+		transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(), [uniform](double c) -> double {return uniform;});
 //		cerr << "Underflow in Backward pass at position: " << this->unique_kmers->at(column_index)->get_variant_position() << ". Column set to uniform." << endl;
 	}
 
@@ -485,7 +485,7 @@ void HMM::compute_viterbi_column(size_t column_index) {
 	EmissionProbabilityComputer emission_probability_computer(this->unique_kmers->at(variant_id), this->probabilities);
 
 	// normalization 
-	long double normalization_sum = 0.0L;
+	double normalization_sum = 0.0;
 
 	// backtrace table
 	vector<size_t>* backtrace_column = new vector<size_t>();
@@ -498,11 +498,11 @@ void HMM::compute_viterbi_column(size_t column_index) {
 			// get paths corresponding to path indices
 			unsigned short path1 = this->column_indexer->get_path(path_id1);
 			unsigned short path2 = this->column_indexer->get_path(path_id2);
-			long double previous_cell = 0.0L;
+			double previous_cell = 0.0;
 			if (column_index > 0) {
 				// previous state index
 				size_t j = 0;
-				long double max_value = 0.0L;
+				double max_value = 0.0;
 				size_t max_index = 0;
 				// iterate over all pairs of previous paths
 				for (unsigned short prev_path_id1 = 0; prev_path_id1 < nr_paths; ++prev_path_id1) {
@@ -511,9 +511,9 @@ void HMM::compute_viterbi_column(size_t column_index) {
 						unsigned short prev_path1 = this->column_indexer->get_path(prev_path_id1);
 						unsigned short prev_path2 = this->column_indexer->get_path(prev_path_id2);
 						// probability of previous cell
-						long double prev_prob = previous_column->column.at(j);
+						double prev_prob = previous_column->column.at(j);
 						// determine transition probability
-						long double transition_prob = transition_probability_computer->compute_transition_prob(prev_path1, prev_path2, path1, path2);
+						double transition_prob = transition_probability_computer->compute_transition_prob(prev_path1, prev_path2, path1, path2);
 						prev_prob *= transition_prob;
 						if (prev_prob >= max_value) {
 							max_value = prev_prob;
@@ -525,28 +525,28 @@ void HMM::compute_viterbi_column(size_t column_index) {
 				previous_cell = max_value;
 				backtrace_column->push_back(max_index);
 			} else {
-				previous_cell = 1.0L;
+				previous_cell = 1.0;
 			}
 
 			// determine alleles current paths (ids) correspond to
 			unsigned short allele1 = this->column_indexer->get_allele(path_id1, column_index);
 			unsigned short allele2 = this->column_indexer->get_allele(path_id2, column_index);
 			// determine emission probability
-			long double emission_prob = emission_probability_computer.get_emission_probability(allele1,allele2);
+			double emission_prob = emission_probability_computer.get_emission_probability(allele1,allele2);
 			// set entry of current column
-			long double current_cell = previous_cell * emission_prob;
+			double current_cell = previous_cell * emission_prob;
 			current_column->column.push_back(current_cell);
 			normalization_sum += current_cell;
 			i += 1;
 		}
 	}
 
-	if (normalization_sum > 0.0L) {
+	if (normalization_sum > 0.0) {
 		// normalize the entries in current column to sum up to 1 
-		transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(), bind(divides<long double>(), placeholders::_1, normalization_sum));
+		transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(), bind(divides<double>(), placeholders::_1, normalization_sum));
 	} else {
-		long double uniform = 1.0L / (long double) current_column->column.size();
-		transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(),  [uniform](long double c) -> long double {return uniform;});
+		double uniform = 1.0 / (double) current_column->column.size();
+		transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(),  [uniform](double c) -> double {return uniform;});
 //		cerr << "Underflow in Viterbi pass at position: " << this->unique_kmers->at(column_index)->get_variant_position() << ". Column set to uniform." << endl;
 	}
 

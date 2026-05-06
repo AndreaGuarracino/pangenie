@@ -54,10 +54,10 @@ size_t JellyfishReader::getKmerAbundance(jellyfish::mer_dna jelly_kmer){
 size_t JellyfishReader::computeKmerCoverage(size_t genome_kmers) {
 	binary_reader reader (this->ifs, this->header.get());
 
-	long double result = 0.0L;
-	long double genome = 1.0L * genome_kmers;
+	double result = 0.0;
+	double genome = 1.0 * genome_kmers;
 	while (reader.next()){
-		long double count = 1.0L * reader.val();
+		double count = 1.0 * reader.val();
 		result += (count/genome);
 	}
 

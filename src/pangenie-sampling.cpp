@@ -23,13 +23,13 @@ int main(int argc, char* argv[]) {
 	string outname = "result";
 	size_t nr_jellyfish_threads = 1;
 	size_t nr_core_threads = 1;
-	long double regularization = 0.01L;
+	double regularization = 0.01;
 	bool count_only_graph = true;
 	uint64_t hash_size = 3000000000;
 	size_t panel_size = 0;
 	double recombrate = 1.26;
 	// TOD0: for testing purposes
-	long double sampling_effective_N = 0.01L;
+	double sampling_effective_N = 0.01;
 	unsigned short allele_penalty = 5;
 
 	// parse the command line arguments

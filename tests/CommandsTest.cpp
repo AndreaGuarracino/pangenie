@@ -24,8 +24,8 @@ TEST_CASE("Commands run_genotype_command1", "[Commands run_genotype_command1]") 
 	size_t nr_core_threads = 1;
 	bool only_genotyping = true;
 	bool only_phasing = false;
-	long double effective_N = 0.00001L;
-	long double regularization = 0.01L;
+	double effective_N = 0.00001;
+	double regularization = 0.01;
 	bool count_only_graph = true;
 	bool ignore_imputed = false;
 	size_t sampling_size = 215;
@@ -73,7 +73,7 @@ TEST_CASE("Commands run_genotype_command1", "[Commands run_genotype_command1]") 
 	vector<string> expected_likelihoods = {};
 
 	for(size_t i = 0; i < 2; ++i) {
-		vector<long double> likelihoods = genotypes[i].get_specific_likelihoods(defined[i]).get_all_likelihoods(defined[i].size());
+		vector<double> likelihoods = genotypes[i].get_specific_likelihoods(defined[i]).get_all_likelihoods(defined[i].size());
 		ostringstream all;
 		pair<int,int> genotype = genotypes[i].get_specific_likelihoods(defined[i]).get_likeliest_genotype();
 		all << genotype.first << "/" << genotype.second << ":";
@@ -103,8 +103,8 @@ TEST_CASE("Commands run_genotype_command2", "[Commands run_genotype_command2]") 
 	size_t nr_core_threads = 1;
 	bool only_genotyping = true;
 	bool only_phasing = false;
-	long double effective_N = 0.00001L;
-	long double regularization = 0.01L;
+	double effective_N = 0.00001;
+	double regularization = 0.01;
 	bool count_only_graph = true;
 	bool ignore_imputed = false;
 	size_t sampling_size = 0;
@@ -154,7 +154,7 @@ TEST_CASE("Commands run_genotype_command2", "[Commands run_genotype_command2]") 
 		if (genotypes[i].contains_no_likelihoods()) {
 			genotypes[i].add_to_likelihood(0,0,1.0);
 		}
-		vector<long double> likelihoods = genotypes[i].get_specific_likelihoods(defined[i]).get_all_likelihoods(defined[i].size());
+		vector<double> likelihoods = genotypes[i].get_specific_likelihoods(defined[i]).get_all_likelihoods(defined[i].size());
 		ostringstream all;
 		pair<int,int> genotype = genotypes[i].get_specific_likelihoods(defined[i]).get_likeliest_genotype();
 		if ((genotype.first != -1) && (genotype.second != -1)) {

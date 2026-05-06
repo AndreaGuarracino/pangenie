@@ -22,10 +22,10 @@ ProbabilityTable::ProbabilityTable()
 	:cov_min(0),
 	 cov_max(0),
 	 count_max(0),
-	 regularization_const(0.0L)
+	 regularization_const(0.0)
 {}
 
-ProbabilityTable::ProbabilityTable(unsigned short cov_min, unsigned short cov_max, unsigned short count_max, long double regularization_const)
+ProbabilityTable::ProbabilityTable(unsigned short cov_min, unsigned short cov_max, unsigned short count_max, double regularization_const)
 	:cov_min(cov_min),
 	 cov_max(cov_max),
 	 count_max(count_max),
@@ -53,9 +53,9 @@ CopyNumber ProbabilityTable::get_probability (unsigned short kmer_coverage, unsi
 }
 
 CopyNumber ProbabilityTable::compute_probability(unsigned short kmer_coverage, unsigned short read_kmer_count) const {
-			long double p_cn0 = geometric(get_error_param(kmer_coverage), read_kmer_count);
-			long double p_cn1 = poisson(kmer_coverage / 2.0, read_kmer_count);
-			long double p_cn2 = poisson(kmer_coverage, read_kmer_count);
+			double p_cn0 = geometric(get_error_param(kmer_coverage), read_kmer_count);
+			double p_cn1 = poisson(kmer_coverage / 2.0, read_kmer_count);
+			double p_cn2 = poisson(kmer_coverage, read_kmer_count);
 
 			if (this->regularization_const > 0) {
 				return CopyNumber(p_cn0, p_cn1, p_cn2, regularization_const);
@@ -72,16 +72,16 @@ void ProbabilityTable::modify_probability(unsigned short kmer_coverage, unsigned
 	}
 }
 
-long double ProbabilityTable::poisson(long double mean, unsigned int value) const {
-	long double sum = 0.0L;
+double ProbabilityTable::poisson(double mean, unsigned int value) const {
+	double sum = 0.0;
 	int v = (int) value;
 	for (size_t i = 1; i <= value; ++i) sum += log(i);
-	long double log_val = -mean + v * log(mean) - sum;
+	double log_val = -mean + v * log(mean) - sum;
 	return exp(log_val);
 }
 
-long double ProbabilityTable::geometric(long double p, unsigned int value) const {
-	return pow(1.0L - p, value)*p;
+double ProbabilityTable::geometric(double p, unsigned int value) const {
+	return pow(1.0 - p, value)*p;
 }
 
 ostream& operator<<(ostream& os, const ProbabilityTable& var) {

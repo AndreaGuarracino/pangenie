@@ -38,15 +38,15 @@ public:
 	* @param allele2 second genotype allele
 	* @param value to add to the genotype likelihood
 	**/
-	void add_to_likelihood(unsigned short allele1, unsigned short allele2, long double value);
+	void add_to_likelihood(unsigned short allele1, unsigned short allele2, double value);
 	/** add allele on haplotype 1 **/
 	void add_first_haplotype_allele(unsigned short allele);
 	/** add allele on haplotype 2 **/
 	void add_second_haplotype_allele(unsigned short allele);
 	/** get likelihood of genotype allele1/allele2 (=allele2/allele1). **/
-	long double get_genotype_likelihood(unsigned short allele1, unsigned short allele2) const;
+	double get_genotype_likelihood(unsigned short allele1, unsigned short allele2) const;
 	/** get all likelihoods ordered as defined in VCF specification. **/
-	std::vector<long double> get_all_likelihoods (size_t nr_alleles) const;
+	std::vector<double> get_all_likelihoods (size_t nr_alleles) const;
 	/** get all likelihoods for genotypes containing the given alleles. Likelihoods are normalized so sum up to 1. 
 	NOTE: haplotype alleles are set only if they occur in the list of given alleles. Otherwise (i.e. if undefined), they are 0.**/
 	GenotypingResult get_specific_likelihoods (std::vector<unsigned short>& alleles) const;
@@ -55,7 +55,7 @@ public:
 	/** get haplotype **/
 	std::pair<unsigned short, unsigned short> get_haplotype() const;
 	/** divide all likelihoods by given value **/
-	void divide_likelihoods_by(long double value);
+	void divide_likelihoods_by(double value);
 	/** get genotype with highest likelihood **/
 	std::pair<int, int> get_likeliest_genotype() const;
 	friend std::ostream& operator<<(std::ostream& os, const GenotypingResult& res);
@@ -72,7 +72,7 @@ public:
 	bool contains_no_likelihoods() const;
 
 	/** provide access to stored likelihoods **/
-	const std::map < std::pair<unsigned short,unsigned short>, long double >& get_stored_likelihoods() const;
+	const std::map < std::pair<unsigned short,unsigned short>, double >& get_stored_likelihoods() const;
 
 	template<class Archive>
 	void serialize(Archive& archive) {
@@ -81,7 +81,7 @@ public:
 
 private:
 	/** map genotype -> likelihood. genotype alleles are ordered in ascending order **/
-	std::map < std::pair<unsigned short,unsigned short>, long double > genotype_to_likelihood;
+	std::map < std::pair<unsigned short,unsigned short>, double > genotype_to_likelihood;
 	unsigned short haplotype_1;
 	unsigned short haplotype_2;
 	unsigned short local_coverage;

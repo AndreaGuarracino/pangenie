@@ -72,7 +72,7 @@ public:
 	* @param chromosome name of the chromosome (only used when writing path_output)
 	* @param allele_penalty penality to penalize already covered alleles
 	**/
-	HaplotypeSampler(std::vector<std::shared_ptr<UniqueKmers>>* unique_kmers, size_t size, double recombrate = 1.26, long double effective_N = 25000.0L, std::vector<unsigned int>* best_scores = nullptr, bool add_reference = false, std::string path_output="", std::string chromosome = "None", unsigned short allele_penalty = 10, double* time = nullptr );
+	HaplotypeSampler(std::vector<std::shared_ptr<UniqueKmers>>* unique_kmers, size_t size, double recombrate = 1.26, double effective_N = 25000.0, std::vector<unsigned int>* best_scores = nullptr, bool add_reference = false, std::string path_output="", std::string chromosome = "None", unsigned short allele_penalty = 10, double* time = nullptr );
 
 	// keeping it public for testing purposes ..
 	void get_column_minima(std::vector<unsigned int>& column, std::vector<bool>& mask, size_t& first_id, size_t& second_id, unsigned int& first_val, unsigned int& second_val) const;
@@ -106,7 +106,7 @@ private:
 	std::vector<bool> prev_mask;
 	std::vector<SamplingEmissions> emission_costs;
 	double recombrate;
-	long double effective_N;
+	double effective_N;
 	unsigned short allele_penalty;
 
 	template<class T>

@@ -6,11 +6,11 @@ using namespace std;
 
 ProbabilityComputer::ProbabilityComputer() {}
 
-ProbabilityComputer::ProbabilityComputer(long double mean_cn0, long double mean_cn1, long double mean_cn2)
+ProbabilityComputer::ProbabilityComputer(double mean_cn0, double mean_cn1, double mean_cn2)
 	:means({mean_cn0, mean_cn1, mean_cn2})
 {}
 
-void ProbabilityComputer::set_parameters (long double mean_cn0, long double mean_cn1, long  double mean_cn2) {
+void ProbabilityComputer::set_parameters (double mean_cn0, double mean_cn1, double mean_cn2) {
 	if ( (mean_cn0 > 0) && (mean_cn1 > 0) && (mean_cn2 > 0) ) { 
 		this->means = {mean_cn0, mean_cn1, mean_cn2};
 	} else {
@@ -18,7 +18,7 @@ void ProbabilityComputer::set_parameters (long double mean_cn0, long double mean
 	}
 }
 
-long double ProbabilityComputer::get_probability(size_t cn, unsigned int value) const {
+double ProbabilityComputer::get_probability(size_t cn, unsigned int value) const {
 	if (this->means.size() == 0) {
 		throw runtime_error("ProbabilityComputer::get_probability: parameters have not yet been set. Use set_parameters().");
 	}
@@ -32,14 +32,14 @@ long double ProbabilityComputer::get_probability(size_t cn, unsigned int value) 
 	}
 }
 
-long double ProbabilityComputer::poisson(long double mean, unsigned int value) const {
-	long double sum = 0.0L;
+double ProbabilityComputer::poisson(double mean, unsigned int value) const {
+	double sum = 0.0;
 	int v = (int) value;
 	for (size_t i = 1; i <= value; ++i) sum += log(i);
-	long double log_val = -mean + v * log(mean) - sum;
+	double log_val = -mean + v * log(mean) - sum;
 	return exp(log_val);
 }
 
-long double ProbabilityComputer::geometric(long double p, unsigned int value) const {
-	return pow(1.0L - p, value)*p;
+double ProbabilityComputer::geometric(double p, unsigned int value) const {
+	return pow(1.0 - p, value)*p;
 }

@@ -18,8 +18,8 @@
 /** Respresents the genotyping HMM. **/
 
 struct HMMColumn {
-	std::vector<long double> column;
-	long double forward_normalization_sum;
+	std::vector<double> column;
+	double forward_normalization_sum;
 };
 
 
@@ -35,7 +35,7 @@ public:
 	* @param only_paths only use these paths and ignore others that might be in unique_kmers.
 	**/
 	HMM() = default;
-	HMM(std::vector<std::shared_ptr<UniqueKmers>>* unique_kmers, ProbabilityTable* probabilities, bool run_genotyping, bool run_phasing, double recombrate = 1.26, bool uniform = false, long double effective_N = 25000.0L, std::vector<unsigned short>* only_paths = nullptr, bool normalize = true);
+	HMM(std::vector<std::shared_ptr<UniqueKmers>>* unique_kmers, ProbabilityTable* probabilities, bool run_genotyping, bool run_phasing, double recombrate = 1.26, bool uniform = false, double effective_N = 25000.0, std::vector<unsigned short>* only_paths = nullptr, bool normalize = true);
 	/** combines likelihoods with likelihoods of given HMM. **/
 	void combine_likelihoods(HMM& other);
 	/** normalize computed genotype likelihoods **/
@@ -63,7 +63,7 @@ private:
 	std::vector< GenotypingResult > genotyping_result;
 	double recombrate;
 	bool uniform;
-	long double effective_N;
+	double effective_N;
 	void compute_forward_prob();
 	void compute_backward_prob();
 	void compute_viterbi_path();

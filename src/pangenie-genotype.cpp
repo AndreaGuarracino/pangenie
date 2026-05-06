@@ -30,10 +30,10 @@ int main(int argc, char* argv[]) {
 	size_t nr_core_threads = 1;
 	bool only_genotyping = true;
 	bool only_phasing = false;
-	long double effective_N = 0.00001L;
+	double effective_N = 0.00001;
 	// TOD0: for testing purposes
-	long double sampling_effective_N = 0.01L;
-	long double regularization = 0.01L;
+	double sampling_effective_N = 0.01;
+	double regularization = 0.01;
 	bool count_only_graph = true;
 	bool ignore_imputed = false;
 	size_t sampling_size = 0;

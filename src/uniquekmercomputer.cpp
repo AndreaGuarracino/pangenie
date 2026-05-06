@@ -141,9 +141,9 @@ void UniqueKmerComputer::compute_unique_kmers(vector<shared_ptr<UniqueKmers>>* r
 			for (auto& kmer : a.second) {
 				size_t read_kmercount = this->read_kmers->getKmerAbundance(kmer);
 				CopyNumber cn = probabilities->get_probability(kmer_coverage, read_kmercount);
-				long double p_cn0 = cn.get_probability_of(0);
-				long double p_cn1 = cn.get_probability_of(1);
-				long double p_cn2 = cn.get_probability_of(2);
+				double p_cn0 = cn.get_probability_of(0);
+				double p_cn1 = cn.get_probability_of(1);
+				double p_cn2 = cn.get_probability_of(2);
 
 				// skip kmers with only 0 probabilities
 				if ( (p_cn0 > 0) || (p_cn1 > 0) || (p_cn2 > 0) ) {

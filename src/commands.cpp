@@ -73,7 +73,7 @@ struct Results {
 };
 
 
-void fill_read_kmercounts(string chromosome, UniqueKmersMap* unique_kmers_map, shared_ptr<KmerCounter> read_kmer_counts, ProbabilityTable* probabilities, string outname, size_t kmer_coverage, size_t panel_size, double recombrate, long double effective_N, bool add_reference, string output_paths, unsigned short allele_penalty) {
+void fill_read_kmercounts(string chromosome, UniqueKmersMap* unique_kmers_map, shared_ptr<KmerCounter> read_kmer_counts, ProbabilityTable* probabilities, string outname, size_t kmer_coverage, size_t panel_size, double recombrate, double effective_N, bool add_reference, string output_paths, unsigned short allele_penalty) {
 	Timer timer;
 	string filename = outname + "_" + chromosome + "_kmers.tsv.gz";
 	gzFile file = gzopen(filename.c_str(), "rb");
@@ -119,9 +119,9 @@ void fill_read_kmercounts(string chromosome, UniqueKmersMap* unique_kmers_map, s
 
 					// determine probabilities
 					CopyNumber cn = probabilities->get_probability(kmer_coverage, count);
-					long double p_cn0 = cn.get_probability_of(0);
-					long double p_cn1 = cn.get_probability_of(1);
-					long double p_cn2 = cn.get_probability_of(2);
+					double p_cn0 = cn.get_probability_of(0);
+					double p_cn1 = cn.get_probability_of(1);
+					double p_cn2 = cn.get_probability_of(2);
 
 					if (!(p_cn0 > 0.0 || p_cn1 > 0.0 || p_cn2 > 0.0)) cerr << "Warining: only zero probabilities for " << kmers[i] << " at " << chrom << " " << start << endl; 
 
@@ -152,7 +152,7 @@ void fill_read_kmercounts(string chromosome, UniqueKmersMap* unique_kmers_map, s
 }
 
 
-void run_genotyping(string chromosome, vector<shared_ptr<UniqueKmers>>* unique_kmers, ProbabilityTable* probs, bool only_genotyping, bool only_phasing, long double effective_N, vector<unsigned short>* only_paths, Results* results, double recombrate) {
+void run_genotyping(string chromosome, vector<shared_ptr<UniqueKmers>>* unique_kmers, ProbabilityTable* probs, bool only_genotyping, bool only_phasing, double effective_N, vector<unsigned short>* only_paths, Results* results, double recombrate) {
 	Timer timer;
 	/* construct HMM and run genotyping/phasing. Genotyping is run without normalizing the final alpha*beta values.
 	These values are first added up across different subsets of paths, and the resulting probabilities are normalized
@@ -202,7 +202,7 @@ void prepare_unique_kmers_stepwise(string chromosome, KmerCounter* genomic_kmer_
 }
 
 
-void prepare_unique_kmers(string chromosome, KmerCounter* genomic_kmer_counts, shared_ptr<KmerCounter> read_kmer_counts, shared_ptr<Graph> graph, ProbabilityTable* probs, UniqueKmersMap* unique_kmers_map, size_t kmer_coverage, size_t panel_size, double recombrate, long double effective_N, bool reference_added, string output_paths, unsigned short allele_penalty) {
+void prepare_unique_kmers(string chromosome, KmerCounter* genomic_kmer_counts, shared_ptr<KmerCounter> read_kmer_counts, shared_ptr<Graph> graph, ProbabilityTable* probs, UniqueKmersMap* unique_kmers_map, size_t kmer_coverage, size_t panel_size, double recombrate, double effective_N, bool reference_added, string output_paths, unsigned short allele_penalty) {
 	Timer timer;
 	UniqueKmerComputer kmer_computer(genomic_kmer_counts, read_kmer_counts, graph, kmer_coverage);
 	std::vector<shared_ptr<UniqueKmers>> unique_kmers;
@@ -221,7 +221,7 @@ void prepare_unique_kmers(string chromosome, KmerCounter* genomic_kmer_counts, s
 
 
 
-int run_single_command(string precomputed_prefix, string readfile, string reffile, string vcffile, size_t kmersize, string outname, string sample_name, size_t nr_jellyfish_threads, size_t nr_core_threads, bool only_genotyping, bool only_phasing, long double effective_N, long double regularization, bool count_only_graph, bool ignore_imputed, bool add_reference, size_t sampling_size, uint64_t hash_size, size_t panel_size, double recombrate, bool output_panel,  long double sampling_effective_N, unsigned short allele_penalty, bool serialize_output)
+int run_single_command(string precomputed_prefix, string readfile, string reffile, string vcffile, size_t kmersize, string outname, string sample_name, size_t nr_jellyfish_threads, size_t nr_core_threads, bool only_genotyping, bool only_phasing, double effective_N, double regularization, bool count_only_graph, bool ignore_imputed, bool add_reference, size_t sampling_size, uint64_t hash_size, size_t panel_size, double recombrate, bool output_panel,  double sampling_effective_N, unsigned short allele_penalty, bool serialize_output)
 {
 
 	Timer timer;
@@ -727,7 +727,7 @@ int run_index_command(string reffile, string vcffile, size_t kmersize, string ou
 
 }
 
-int run_genotype_command(string precomputed_prefix, string readfile, string outname, string sample_name, size_t nr_jellyfish_threads, size_t nr_core_threads, bool only_genotyping, bool only_phasing, long double effective_N, long double regularization, bool count_only_graph, bool ignore_imputed, size_t sampling_size, uint64_t hash_size, size_t panel_size, double recombrate, bool output_panel,  long double sampling_effective_N, unsigned short allele_penalty, bool serialize_output)
+int run_genotype_command(string precomputed_prefix, string readfile, string outname, string sample_name, size_t nr_jellyfish_threads, size_t nr_core_threads, bool only_genotyping, bool only_phasing, double effective_N, double regularization, bool count_only_graph, bool ignore_imputed, size_t sampling_size, uint64_t hash_size, size_t panel_size, double recombrate, bool output_panel,  double sampling_effective_N, unsigned short allele_penalty, bool serialize_output)
 {
 
 	Timer timer;
@@ -1153,7 +1153,7 @@ int run_vcf_command(string precomputed_prefix, string results_name, string outna
 
 
 
-int run_sampling(string precomputed_prefix, string readfile, string outname, size_t nr_jellyfish_threads, size_t nr_core_threads, long double regularization, bool count_only_graph, uint64_t hash_size, size_t panel_size, double recombrate, long double sampling_effective_N, unsigned short allele_penalty)
+int run_sampling(string precomputed_prefix, string readfile, string outname, size_t nr_jellyfish_threads, size_t nr_core_threads, double regularization, bool count_only_graph, uint64_t hash_size, size_t panel_size, double recombrate, double sampling_effective_N, unsigned short allele_penalty)
 {
 
 	Timer timer;

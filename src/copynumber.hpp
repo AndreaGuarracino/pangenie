@@ -13,13 +13,13 @@ public:
 	@param cn_1 probability of copy number 1
 	@param cn_2 probability of copy number 2
 	 **/
-	CopyNumber(long double cn_0, long double cn_1, long double cn_2);
-	CopyNumber(long double cn_0, long double cn_1, long double cn_2, long double regularization_const);
+	CopyNumber(double cn_0, double cn_1, double cn_2);
+	CopyNumber(double cn_0, double cn_1, double cn_2, double regularization_const);
 	/** get probability of copy number cn **/
-	long double get_probability_of(int cn) const;
+	double get_probability_of(int cn) const;
 	bool operator==(const CopyNumber &other) const;
 	bool operator!=(const CopyNumber &other) const;
 private:
-	std::vector<long double> probabilities;
+	std::vector<double> probabilities;
 };
 #endif // COPYNUMBER_H

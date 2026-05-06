@@ -71,8 +71,8 @@ TEST_CASE("GenotypingResult get_all_likelihoods (biallelic)", "[GenotypingResult
 	r.add_to_likelihood(1,1,0.2);
 	r.add_to_likelihood(0,1,0.7);
 
-	vector<long double> computed_likelihoods = r.get_all_likelihoods(2);
-	vector<long double> expected_likelihoods = {0.1,0.7,0.2};
+	vector<double> computed_likelihoods = r.get_all_likelihoods(2);
+	vector<double> expected_likelihoods = {0.1,0.7,0.2};
 	REQUIRE(computed_likelihoods.size() == 3);
 
 	for (size_t i = 0; i < 3; ++i) {
@@ -91,8 +91,8 @@ TEST_CASE("GenotypingResult get_all_likelihoods (triallelic)", "[GenotypingResul
 	r.add_to_likelihood(1,2,0.5);
 	r.add_to_likelihood(0,2,0.1);
 
-	vector<long double> computed_likelihoods = r.get_all_likelihoods(3);
-	vector<long double> expected_likelihoods = {0.05,0.01,0.04,0.1,0.5,0.3};
+	vector<double> computed_likelihoods = r.get_all_likelihoods(3);
+	vector<double> expected_likelihoods = {0.05,0.01,0.04,0.1,0.5,0.3};
 	REQUIRE(computed_likelihoods.size() == 6);
 
 	for (size_t i = 0; i < 6; ++i) {
@@ -115,8 +115,8 @@ TEST_CASE("GenotypingResult get_specific_likelihoods", "[GenotypingResult get_sp
 	r.add_to_likelihood(2,1,0.22);
 	r.add_to_likelihood(2,2,0.1);
 
-	vector<long double> all_likelihoods = r.get_all_likelihoods(3);
-	vector<long double> expected_likelihoods = {0.01, 0.17, 0.05, 0.30, 0.37, 0.1};
+	vector<double> all_likelihoods = r.get_all_likelihoods(3);
+	vector<double> expected_likelihoods = {0.01, 0.17, 0.05, 0.30, 0.37, 0.1};
 
 	for (size_t i = 0; i < 6; ++i) {
 		REQUIRE(doubles_equal(all_likelihoods[i], expected_likelihoods[i]));
@@ -124,8 +124,8 @@ TEST_CASE("GenotypingResult get_specific_likelihoods", "[GenotypingResult get_sp
 
 	vector<unsigned short> defined_alleles = {0,2};
 	GenotypingResult specific_likelihoods = r.get_specific_likelihoods(defined_alleles);
-	vector<long double> likelihoods = specific_likelihoods.get_all_likelihoods(2);
-	vector<long double> expected_specific_likelihoods = {0.0243902439, 0.73170731706, 0.24390243902};
+	vector<double> likelihoods = specific_likelihoods.get_all_likelihoods(2);
+	vector<double> expected_specific_likelihoods = {0.0243902439, 0.73170731706, 0.24390243902};
 
 	for (size_t i = 0; i < 3; ++i) {
 		REQUIRE(doubles_equal(likelihoods[i], expected_specific_likelihoods[i]));
@@ -138,8 +138,8 @@ TEST_CASE("GenotypingResult get_specific_likelihoods2", "[GenotypingResult get_s
 	r.add_to_likelihood(0,1,0.7);
 	r.add_to_likelihood(1,1,0.1);
 
-	vector<long double> all_likelihoods = r.get_all_likelihoods(2);
-	vector<long double> expected_likelihoods = {0.2, 0.7, 0.1};
+	vector<double> all_likelihoods = r.get_all_likelihoods(2);
+	vector<double> expected_likelihoods = {0.2, 0.7, 0.1};
 
 	for (size_t i = 0; i < 3; ++i) {
 		REQUIRE(doubles_equal(all_likelihoods[i], expected_likelihoods[i]));
@@ -147,7 +147,7 @@ TEST_CASE("GenotypingResult get_specific_likelihoods2", "[GenotypingResult get_s
 
 	vector<unsigned short> defined_alleles = {0,1};
 	GenotypingResult specific_likelihoods = r.get_specific_likelihoods(defined_alleles);
-	vector<long double> likelihoods = specific_likelihoods.get_all_likelihoods(2);
+	vector<double> likelihoods = specific_likelihoods.get_all_likelihoods(2);
 
 	for (size_t i = 0; i < 3; ++i) {
 		REQUIRE(doubles_equal(likelihoods[i], expected_likelihoods[i]));
