@@ -380,6 +380,32 @@ void HMM::compute_backward_column(size_t column_index) {
 	double* cur_back_buf = current_column->column.data();
 	double fwd_norm = forward_column ? forward_column->forward_normalization_sum : 1.0;
 
+	// stage-B microopt: per-cell add_to_likelihood touches a std::map ~7921 times per
+	// column (nr_paths^2). Each call is O(log small_n) tree-walk + sort + insert.
+	// On chr22 this is 332k columns * 7921 cells = 2.6 billion map ops, taking
+	// 80-130 seconds. Replace with a flat allele-pair array accumulator over the
+	// column, flushed once per column into the map -> O(N^2) map ops where
+	// N = max_allele_in_column + 1 (typically <= 10 for HPRC v1).
+	unsigned short max_allele = 0;
+	for (unsigned short p = 0; p < nr_paths; ++p) {
+		unsigned short a = this->column_indexer->get_allele(p, column_index);
+		if (a > max_allele) max_allele = a;
+	}
+	const size_t N = (size_t)max_allele + 1;
+	// stage-B: avoid heap alloc for biallelic / small-multi-allelic variants
+	// (the common case). 16*16=256 doubles = 2 KB stack space, fits L1 easily.
+	constexpr size_t STACK_NN = 256;
+	double stack_acc[STACK_NN];
+	std::vector<double> heap_acc;
+	double* acc_buf;
+	if (N * N <= STACK_NN) {
+		std::fill(stack_acc, stack_acc + N * N, 0.0);
+		acc_buf = stack_acc;
+	} else {
+		heap_acc.assign(N * N, 0.0);
+		acc_buf = heap_acc.data();
+	}
+
 	// state index
 	size_t i = 0;
 	// iterate over all pairs of current paths
@@ -389,6 +415,7 @@ void HMM::compute_backward_column(size_t column_index) {
 		unsigned short prev_allele1 = (column_index < column_count - 1)
 			? this->column_indexer->get_allele(path_id1, column_index + 1) : 0;
 		double helper_i_p1 = helper_i[path_id1];
+		size_t a1_base = (size_t)allele1 * N;
 		for (unsigned short path_id2 = 0; path_id2 < nr_paths; ++path_id2) {
 			// get alleles on current paths
 			unsigned short allele2 = this->column_indexer->get_allele(path_id2, column_index);
@@ -414,9 +441,22 @@ void HMM::compute_backward_column(size_t column_index) {
 			double forward_backward_prob = fwd_buf[i] * current_cell;
 			normalization_f_b += forward_backward_prob;
 
-			// update genotype likelihood
-			this->genotyping_result.at(variant_id).add_to_likelihood(allele1, allele2, forward_backward_prob * fwd_norm);
+			// stage-B: cheap array accumulate instead of map insert.
+			acc_buf[a1_base + allele2] += forward_backward_prob * fwd_norm;
 			i += 1;
+		}
+	}
+
+	// stage-B: flush accumulator into the map (N^2 ops, was nr_paths^2).
+	{
+		auto& result_for_variant = this->genotyping_result.at(variant_id);
+		for (size_t a1 = 0; a1 < N; ++a1) {
+			for (size_t a2 = 0; a2 < N; ++a2) {
+				double v = acc_buf[a1 * N + a2];
+				if (v != 0.0) {
+					result_for_variant.add_to_likelihood((unsigned short)a1, (unsigned short)a2, v);
+				}
+			}
 		}
 	}
 
