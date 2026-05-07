@@ -40,6 +40,12 @@ bool ends_with (string const &filename, string const &ending) {
 }
 
 void check_input_file(string &filename) {
+	// allow stdin: skip existence + .gz checks. Caller is responsible for piping
+	// uncompressed FASTQ (e.g. `pigz -dc R1.fq.gz R2.fq.gz | PanGenie -i /dev/stdin`).
+	if (filename == "/dev/stdin" || filename == "-") {
+		if (filename == "-") filename = "/dev/stdin";
+		return;
+	}
 	// check if file exists and can be opened
 	ifstream file(filename);
 	if (!file.good()) {
