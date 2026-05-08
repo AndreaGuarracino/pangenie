@@ -1,4 +1,4 @@
-add_library(PanGenieLib SHARED 
+add_library(PanGenieLib SHARED
 	emissionprobabilitycomputer.cpp
 	copynumber.cpp
 	commandlineparser.cpp
@@ -14,6 +14,10 @@ add_library(PanGenieLib SHARED
 	hmm.cpp
 	jellyfishcounter.cpp
 	jellyfishreader.cpp
+	kmccounter.cpp
+	kmc_api/kmc_file.cpp
+	kmc_api/kmer_api.cpp
+	kmc_api/mmer.cpp
 	kmerpath.cpp
 	kmerpath16.cpp
 	kmerparser.cpp

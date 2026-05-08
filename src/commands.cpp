@@ -14,6 +14,7 @@
 #include "kmercounter.hpp"
 #include "jellyfishreader.hpp"
 #include "jellyfishcounter.hpp"
+#include "kmccounter.hpp"
 #include "emissionprobabilitycomputer.hpp"
 #include "copynumber.hpp"
 #include "graph.hpp"
@@ -45,6 +46,15 @@ void check_input_file(string &filename) {
 	if (filename == "/dev/stdin" || filename == "-") {
 		if (filename == "-") filename = "/dev/stdin";
 		return;
+	}
+	// stage6: when PANGENIE_USE_KMC is set, KMC handles gz-compressed input
+	// natively and supports @file-list and whitespace-separated paths. Skip
+	// the existence + .gz checks and let KMC validate the input itself.
+	{
+		const char* _use_kmc = std::getenv("PANGENIE_USE_KMC");
+		if (_use_kmc && std::string(_use_kmc) != "0" && std::string(_use_kmc) != "") {
+			return;
+		}
 	}
 	// check if file exists and can be opened
 	ifstream file(filename);
@@ -315,18 +325,31 @@ int run_single_command(string precomputed_prefix, string readfile, string reffil
 			**/
 
 			shared_ptr<KmerCounter> read_kmer_counts = nullptr;
-			// determine kmer copynumbers in reads
-			if (readfile.substr(std::max(3, (int) readfile.size())-3) == std::string(".jf")) {
-				cerr << "Read pre-computed read kmer counts ..." << endl;
-				jellyfish::mer_dna::k(kmersize);
-				read_kmer_counts = shared_ptr<JellyfishReader>(new JellyfishReader(readfile, kmersize));
-			} else {
-				cerr << "Count kmers in reads ..." << endl;
-
-				if (count_only_graph) {
-					read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, {segment_file}, kmersize, nr_jellyfish_threads, hash_size));
+			// stage6: PANGENIE_USE_KMC=1 swaps in the KMC3 backend with panel
+			// filtering. KMC counts ~3-5x faster than Jellyfish on WGS; panel
+			// filtering keeps the in-memory hash bounded to the panel kmer set.
+			{
+				const char* _use_kmc_env = std::getenv("PANGENIE_USE_KMC");
+				bool _use_kmc = (_use_kmc_env != nullptr && std::string(_use_kmc_env) != "0" && std::string(_use_kmc_env) != "");
+				if (readfile.substr(std::max(3, (int) readfile.size())-3) == std::string(".jf")) {
+					cerr << "Read pre-computed read kmer counts ..." << endl;
+					jellyfish::mer_dna::k(kmersize);
+					read_kmer_counts = shared_ptr<JellyfishReader>(new JellyfishReader(readfile, kmersize));
+				} else if (_use_kmc) {
+					cerr << "Count kmers in reads (KMC3 backend with panel filter, PANGENIE_USE_KMC=1) ..." << endl;
+					jellyfish::mer_dna::k(kmersize);
+					vector<string> panel_kmer_files;
+					for (const auto& chrom : chromosomes) {
+						panel_kmer_files.push_back(precomputed_prefix + "_" + chrom + "_kmers.tsv.gz");
+					}
+					read_kmer_counts = shared_ptr<KmcCounter>(new KmcCounter(readfile, kmersize, nr_jellyfish_threads, panel_kmer_files, hash_size));
 				} else {
-					read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, kmersize, nr_jellyfish_threads, hash_size));
+					cerr << "Count kmers in reads ..." << endl;
+					if (count_only_graph) {
+						read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, {segment_file}, kmersize, nr_jellyfish_threads, hash_size));
+					} else {
+						read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, kmersize, nr_jellyfish_threads, hash_size));
+					}
 				}
 			}
 
@@ -824,18 +847,31 @@ int run_genotype_command(string precomputed_prefix, string readfile, string outn
 			size_t kmersize = unique_kmers_list.kmersize;
 
 			shared_ptr<KmerCounter> read_kmer_counts = nullptr;
-			// determine kmer copynumbers in reads
-			if (readfile.substr(std::max(3, (int) readfile.size())-3) == std::string(".jf")) {
-				cerr << "Read pre-computed read kmer counts ..." << endl;
-				jellyfish::mer_dna::k(kmersize);
-				read_kmer_counts = shared_ptr<JellyfishReader>(new JellyfishReader(readfile, kmersize));
-			} else {
-				cerr << "Count kmers in reads ..." << endl;
-
-				if (count_only_graph) {
-					read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, {segment_file}, kmersize, nr_jellyfish_threads, hash_size));
+			// stage6: PANGENIE_USE_KMC=1 swaps in the KMC3 backend with panel
+			// filtering. KMC counts ~3-5x faster than Jellyfish on WGS; panel
+			// filtering keeps the in-memory hash bounded to the panel kmer set.
+			{
+				const char* _use_kmc_env = std::getenv("PANGENIE_USE_KMC");
+				bool _use_kmc = (_use_kmc_env != nullptr && std::string(_use_kmc_env) != "0" && std::string(_use_kmc_env) != "");
+				if (readfile.substr(std::max(3, (int) readfile.size())-3) == std::string(".jf")) {
+					cerr << "Read pre-computed read kmer counts ..." << endl;
+					jellyfish::mer_dna::k(kmersize);
+					read_kmer_counts = shared_ptr<JellyfishReader>(new JellyfishReader(readfile, kmersize));
+				} else if (_use_kmc) {
+					cerr << "Count kmers in reads (KMC3 backend with panel filter, PANGENIE_USE_KMC=1) ..." << endl;
+					jellyfish::mer_dna::k(kmersize);
+					vector<string> panel_kmer_files;
+					for (const auto& chrom : chromosomes) {
+						panel_kmer_files.push_back(precomputed_prefix + "_" + chrom + "_kmers.tsv.gz");
+					}
+					read_kmer_counts = shared_ptr<KmcCounter>(new KmcCounter(readfile, kmersize, nr_jellyfish_threads, panel_kmer_files, hash_size));
 				} else {
-					read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, kmersize, nr_jellyfish_threads, hash_size));
+					cerr << "Count kmers in reads ..." << endl;
+					if (count_only_graph) {
+						read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, {segment_file}, kmersize, nr_jellyfish_threads, hash_size));
+					} else {
+						read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, kmersize, nr_jellyfish_threads, hash_size));
+					}
 				}
 			}
 
@@ -1240,18 +1276,31 @@ int run_sampling(string precomputed_prefix, string readfile, string outname, siz
 			size_t kmersize = unique_kmers_list.kmersize;
 
 			shared_ptr<KmerCounter> read_kmer_counts = nullptr;
-			// determine kmer copynumbers in reads
-			if (readfile.substr(std::max(3, (int) readfile.size())-3) == std::string(".jf")) {
-				cerr << "Read pre-computed read kmer counts ..." << endl;
-				jellyfish::mer_dna::k(kmersize);
-				read_kmer_counts = shared_ptr<JellyfishReader>(new JellyfishReader(readfile, kmersize));
-			} else {
-				cerr << "Count kmers in reads ..." << endl;
-
-				if (count_only_graph) {
-					read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, {segment_file}, kmersize, nr_jellyfish_threads, hash_size));
+			// stage6: PANGENIE_USE_KMC=1 swaps in the KMC3 backend with panel
+			// filtering. KMC counts ~3-5x faster than Jellyfish on WGS; panel
+			// filtering keeps the in-memory hash bounded to the panel kmer set.
+			{
+				const char* _use_kmc_env = std::getenv("PANGENIE_USE_KMC");
+				bool _use_kmc = (_use_kmc_env != nullptr && std::string(_use_kmc_env) != "0" && std::string(_use_kmc_env) != "");
+				if (readfile.substr(std::max(3, (int) readfile.size())-3) == std::string(".jf")) {
+					cerr << "Read pre-computed read kmer counts ..." << endl;
+					jellyfish::mer_dna::k(kmersize);
+					read_kmer_counts = shared_ptr<JellyfishReader>(new JellyfishReader(readfile, kmersize));
+				} else if (_use_kmc) {
+					cerr << "Count kmers in reads (KMC3 backend with panel filter, PANGENIE_USE_KMC=1) ..." << endl;
+					jellyfish::mer_dna::k(kmersize);
+					vector<string> panel_kmer_files;
+					for (const auto& chrom : chromosomes) {
+						panel_kmer_files.push_back(precomputed_prefix + "_" + chrom + "_kmers.tsv.gz");
+					}
+					read_kmer_counts = shared_ptr<KmcCounter>(new KmcCounter(readfile, kmersize, nr_jellyfish_threads, panel_kmer_files, hash_size));
 				} else {
-					read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, kmersize, nr_jellyfish_threads, hash_size));
+					cerr << "Count kmers in reads ..." << endl;
+					if (count_only_graph) {
+						read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, {segment_file}, kmersize, nr_jellyfish_threads, hash_size));
+					} else {
+						read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, kmersize, nr_jellyfish_threads, hash_size));
+					}
 				}
 			}
 
