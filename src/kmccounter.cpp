@@ -17,15 +17,24 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <zlib.h>
+#include <cerrno>
 
 using namespace std;
 
 static string make_tmp_dir() {
-    string tmpl = "/tmp/pangenie_kmc_XXXXXX";
+    // Respect $TMPDIR (standard Unix convention). On AoU dsub, /tmp is on the
+    // 10 GB boot disk, which overflows when KMC bin-spills 30-50 GB of WGS
+    // intermediates. The dsub script must export TMPDIR=/mnt/data/... so KMC
+    // writes to the data disk instead.
+    const char* tmpdir_env = std::getenv("TMPDIR");
+    string base = (tmpdir_env && *tmpdir_env) ? string(tmpdir_env) : string("/tmp");
+    // strip trailing slash
+    while (base.size() > 1 && base.back() == '/') base.pop_back();
+    string tmpl = base + "/pangenie_kmc_XXXXXX";
     vector<char> buf(tmpl.begin(), tmpl.end());
     buf.push_back('\0');
     if (mkdtemp(buf.data()) == nullptr) {
-        throw runtime_error("KmcCounter: mkdtemp failed");
+        throw runtime_error("KmcCounter: mkdtemp failed for template " + tmpl + " (errno=" + std::to_string(errno) + ")");
     }
     return string(buf.data());
 }
