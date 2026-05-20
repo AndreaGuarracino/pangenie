@@ -29,7 +29,8 @@ private:
 	std::shared_ptr<UniqueKmers> uniquekmers;
 	ProbabilityTable* probabilities;
 	bool all_zeros;
-	ProbabilityMatrix state_to_prob;
+	unsigned short max_allele;
+        std::vector<double> state_to_prob;
 	double compute_emission_probability(unsigned short allele1, unsigned short allele2, bool allele1_undefined, bool allele2_undefined);
 };
 # endif // EMISSIONPROBABILITYCOMPUTER_H

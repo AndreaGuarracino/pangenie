@@ -20,6 +20,7 @@
 struct HMMColumn {
 	std::vector<double> column;
 	double forward_normalization_sum;
+        std::vector<double> row_sums;
 };
 
 
