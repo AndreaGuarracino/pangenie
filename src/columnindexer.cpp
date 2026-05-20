@@ -28,6 +28,24 @@ ColumnIndexer::ColumnIndexer (vector<shared_ptr<UniqueKmers>>* unique_kmers, vec
 		}
 		if (!all_absent) {
 			this->variant_positions.push_back(column_index);
+			if (this->paths.size() != current_paths.size()) {
+				throw runtime_error("ColumnIndexer::ColumnIndexer: varying number of paths across columns.");
+			}
+			size_t nr_paths_size_t = this->paths.size();
+			for (size_t path_index = 0; path_index < nr_paths_size_t; ++path_index) {
+				unsigned short path_id = this->paths[path_index];
+				bool found = false;
+				for (size_t i = 0; i < current_paths.size(); ++i) {
+					if (current_paths[i] == path_id) {
+						this->allele_by_column_path.push_back(current_alleles[i]);
+						found = true;
+						break;
+					}
+				}
+				if (!found) {
+					throw runtime_error("ColumnIndexer::ColumnIndexer: path missing in column.");
+				}
+			}
 		}
 	}
 }
@@ -57,15 +75,14 @@ unsigned short ColumnIndexer::get_path(unsigned short path_index) const {
 }
 
 unsigned short ColumnIndexer::get_allele (unsigned short path_index, size_t column_index) const {
-	// get the path corresponding to the path index
-	unsigned short path = this->get_path(path_index);
-	// look up the allele covered by that path
+	if (path_index >= this->paths.size()) {
+		throw runtime_error("ColumnIndexer::get_allele: path_index does not exist.");
+	}
 	if (column_index >= this->variant_positions.size()) {
 		throw runtime_error("ColumnIndex::get_allele: column_index does not exist.");
 	}
-	// look up variant_id corresponding to column_index
-	size_t variant = this->variant_positions.at(column_index);
-	return this->unique_kmers->at(variant)->get_allele(path);
+	size_t idx = column_index * this->paths.size() + path_index;
+	return this->allele_by_column_path.at(idx);
 }
 
 pair<unsigned short,unsigned short> ColumnIndexer::get_path_ids_at (size_t position) const {

@@ -29,6 +29,7 @@ public:
 private:
 	std::vector<size_t> variant_positions;
 	std::vector<unsigned short> paths;
+	std::vector<unsigned short> allele_by_column_path;
 	std::vector<std::shared_ptr<UniqueKmers>>* unique_kmers;
 };
 
