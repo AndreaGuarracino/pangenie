@@ -1022,37 +1022,91 @@ int run_genotype_command(string precomputed_prefix, string readfile, string outn
 		cereal::BinaryOutputArchive archive_out(os);
 		archive_out(results);
 	
-	} else {
-		cerr << "Write results to VCF ..." << endl;
+	} else if (chromosomes.size() <= 1) {
+		// Single-chromosome fast path: the partial+cat machinery in the
+		// multi-chrom branch below adds ~20 s of pure overhead on a chrX-class
+		// panel (no parallelism possible with one chrom). Use the old serial
+		// path so single-chrom genotyping stays at parity with stage7.
+		cerr << "Write results to VCF (serial, single chromosome) ..." << endl;
 		if (!(only_genotyping && only_phasing)) assert (results.result.size() == chromosomes.size());
 		bool write_header = true;
 		for (auto chromosome : chromosomes) {
-			// read serialized Graph object corresponding to current chromosome
 			Graph graph;
 			string graph_filename = precomputed_prefix + "_" + chromosome + "_Graph.cereal";
-			cerr << "Reading precomputed Graph for chromosome " << chromosome << " ..." <<  " from " << graph_filename << endl;
-			ifstream os(graph_filename, std::ios::binary);
-			cereal::BinaryInputArchive archive( os );
+			ifstream gf(graph_filename, std::ios::binary);
+			cereal::BinaryInputArchive archive(gf);
 			archive(graph);
-
-			cerr << "Writing results for chromosome " << chromosome << " ..." << endl;
-			if (!only_phasing) {
-				// output genotyping results
-				graph.write_genotypes(outname + "_genotyping.vcf", results.result[chromosome], write_header, sample_name, ignore_imputed);
-			}
-			if (!only_genotyping) {
-				// output phasing results
-				graph.write_phasing(outname + "_phasing.vcf", results.result[chromosome], write_header, sample_name, ignore_imputed);
-			}
-
-			if (output_panel) {
-				// output the sampled panel
-				graph.write_sampled_panel(outname + "_panel.vcf", chrom_to_sampled[chromosome], write_header);
-			}
-	
-			// write header only for first chromosome
+			if (!only_phasing)    graph.write_genotypes(outname + "_genotyping.vcf", results.result.at(chromosome), write_header, sample_name, ignore_imputed);
+			if (!only_genotyping) graph.write_phasing(outname + "_phasing.vcf",       results.result.at(chromosome), write_header, sample_name, ignore_imputed);
+			if (output_panel)     graph.write_sampled_panel(outname + "_panel.vcf", chrom_to_sampled[chromosome], write_header);
 			write_header = false;
 		}
+	} else {
+		// stage8: parallelize VCF write across chromosomes.
+		// Each chromosome reads its own Graph cereal and writes a temp file;
+		// only chromosomes[0] writes the VCF header. After all threads drain,
+		// concatenate the temps in chromosome iteration order. Concat-order
+		// matches the prior serial order, so the final file is byte-identical
+		// to the unparallelized version.
+		cerr << "Write results to VCF (parallel per-chromosome) ..." << endl;
+		if (!(only_genotyping && only_phasing)) assert (results.result.size() == chromosomes.size());
+
+		vector<string> geno_parts(chromosomes.size());
+		vector<string> phase_parts(chromosomes.size());
+		vector<string> panel_parts(chromosomes.size());
+		size_t write_threads = min((size_t)nr_core_threads, chromosomes.size());
+
+		{
+			ThreadPool threadPool(write_threads);
+			for (size_t i = 0; i < chromosomes.size(); ++i) {
+				string chromosome = chromosomes[i];
+				bool first = (i == 0);
+				string geno_part  = outname + "_" + chromosome + "_genotyping.vcf.part";
+				string phase_part = outname + "_" + chromosome + "_phasing.vcf.part";
+				string panel_part = outname + "_" + chromosome + "_panel.vcf.part";
+				geno_parts[i]  = geno_part;
+				phase_parts[i] = phase_part;
+				panel_parts[i] = panel_part;
+
+				function<void()> job = [=, &results, &chrom_to_sampled]() {
+					Graph graph;
+					string graph_filename = precomputed_prefix + "_" + chromosome + "_Graph.cereal";
+					ifstream gf(graph_filename, std::ios::binary);
+					cereal::BinaryInputArchive archive(gf);
+					archive(graph);
+
+					if (!only_phasing) {
+						graph.write_genotypes(geno_part, results.result.at(chromosome), first, sample_name, ignore_imputed);
+					}
+					if (!only_genotyping) {
+						graph.write_phasing(phase_part, results.result.at(chromosome), first, sample_name, ignore_imputed);
+					}
+					if (output_panel) {
+						graph.write_sampled_panel(panel_part, chrom_to_sampled[chromosome], first);
+					}
+				};
+				threadPool.submit(job);
+			}
+		}  // ThreadPool destructor waits for all jobs
+
+		// Concatenate per-chromosome partials in iteration order, then delete them.
+		auto cat_partials = [](const vector<string>& parts, const string& dest) {
+			ofstream out(dest, std::ios::binary | std::ios::trunc);
+			if (!out.is_open()) {
+				throw runtime_error("run_genotype_command: cannot open " + dest + " for writing.");
+			}
+			for (const auto& p : parts) {
+				ifstream in(p, std::ios::binary);
+				if (in.is_open()) {
+					out << in.rdbuf();
+					in.close();
+				}
+				std::remove(p.c_str());
+			}
+		};
+		if (!only_phasing)    cat_partials(geno_parts,  outname + "_genotyping.vcf");
+		if (!only_genotyping) cat_partials(phase_parts, outname + "_phasing.vcf");
+		if (output_panel)     cat_partials(panel_parts, outname + "_panel.vcf");
 	}
 
 	getrusage(RUSAGE_SELF, &rss_total);
