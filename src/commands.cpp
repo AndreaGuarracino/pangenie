@@ -707,24 +707,18 @@ int run_index_command(string reffile, string vcffile, size_t kmersize, string ou
 		time_unique_kmers_wallclock = timer.get_interval_time();
 	}
 
-	// serialization of UniqueKmersMap object.
-	// stage9: write a per-chromosome split in addition to the legacy single-file blob.
-	// Legacy file kept so old PanGenie binaries still read the index unchanged.
-	// New PanGenie (stage9+) detects the `.meta.cereal` sidecar and loads the
-	// per-chromosome files in parallel at genotype time.
-	cerr << "Storing unique kmer information ..." << endl;
-	{
-  		ofstream os(outname + "_UniqueKmersMap.cereal", std::ios::binary);
-  		cereal::BinaryOutputArchive archive( os );
-		archive(unique_kmers_list);
-	}
-	// per-chromosome split files + a metadata sidecar
+	// stage9: serialize UniqueKmersMap as one per-chromosome blob each + a
+	// metadata sidecar with kmersize, add_reference, and the chromosome list.
+	// No legacy single-file blob — doubles disk for no win in a single-image
+	// workflow. PanGenie-genotype already has a fallback that reads the legacy
+	// single file when no sidecar exists, so OLD indexes still work with NEW
+	// PanGenie; but NEW indexes are sidecar-only.
+	cerr << "Storing unique kmer information (per-chromosome) ..." << endl;
 	{
 		vector<string> chrom_list;
 		for (const auto& kv : unique_kmers_list.unique_kmers) chrom_list.push_back(kv.first);
 
-		// metadata: kmersize + add_reference + chrom list, so the reader knows
-		// which per-chrom files to load without globbing the filesystem.
+		// metadata sidecar
 		{
 			ofstream mos(outname + "_UniqueKmersMap.meta.cereal", std::ios::binary);
 			cereal::BinaryOutputArchive marchive(mos);
