@@ -39,6 +39,11 @@ bool ends_with (string const &filename, string const &ending) {
     }
 }
 
+bool file_exists(const string& path) {
+	ifstream f(path);
+	return f.good();
+}
+
 void check_input_file(string &filename) {
 	// allow stdin: skip existence + .gz checks. Caller is responsible for piping
 	// uncompressed FASTQ (e.g. `pigz -dc R1.fq.gz R2.fq.gz | PanGenie -i /dev/stdin`).
@@ -702,12 +707,48 @@ int run_index_command(string reffile, string vcffile, size_t kmersize, string ou
 		time_unique_kmers_wallclock = timer.get_interval_time();
 	}
 
-	// serialization of UniqueKmersMap object
+	// serialization of UniqueKmersMap object.
+	// stage9: write a per-chromosome split in addition to the legacy single-file blob.
+	// Legacy file kept so old PanGenie binaries still read the index unchanged.
+	// New PanGenie (stage9+) detects the `.meta.cereal` sidecar and loads the
+	// per-chromosome files in parallel at genotype time.
 	cerr << "Storing unique kmer information ..." << endl;
 	{
   		ofstream os(outname + "_UniqueKmersMap.cereal", std::ios::binary);
   		cereal::BinaryOutputArchive archive( os );
 		archive(unique_kmers_list);
+	}
+	// per-chromosome split files + a metadata sidecar
+	{
+		vector<string> chrom_list;
+		for (const auto& kv : unique_kmers_list.unique_kmers) chrom_list.push_back(kv.first);
+
+		// metadata: kmersize + add_reference + chrom list, so the reader knows
+		// which per-chrom files to load without globbing the filesystem.
+		{
+			ofstream mos(outname + "_UniqueKmersMap.meta.cereal", std::ios::binary);
+			cereal::BinaryOutputArchive marchive(mos);
+			marchive(unique_kmers_list.kmersize, unique_kmers_list.add_reference, chrom_list);
+		}
+
+		// per-chromosome cereal blobs, written in parallel
+		size_t pool_size = min((size_t)nr_jellyfish_threads, chrom_list.size());
+		if (pool_size < 1) pool_size = 1;
+		{
+			ThreadPool pool(pool_size);
+			for (const auto& chrom : chrom_list) {
+				const auto& vec = unique_kmers_list.unique_kmers.at(chrom);
+				double rt  = unique_kmers_list.runtimes.count(chrom)          ? unique_kmers_list.runtimes.at(chrom)          : 0.0;
+				double srt = unique_kmers_list.sampling_runtimes.count(chrom) ? unique_kmers_list.sampling_runtimes.at(chrom) : 0.0;
+				string path = outname + "_" + chrom + "_UniqueKmersMap.cereal";
+				function<void()> job = [path, &vec, rt, srt]() {
+					ofstream os(path, std::ios::binary);
+					cereal::BinaryOutputArchive ar(os);
+					ar(vec, rt, srt);
+				};
+				pool.submit(job);
+			}
+		}
 	}
 
 	getrusage(RUSAGE_SELF, &rss_total);
@@ -774,13 +815,52 @@ int run_genotype_command(string precomputed_prefix, string readfile, string outn
 		unsigned short nr_paths = 0;
 
 
-		// re-construct UniqueKmersMap + chromosomes from input file (-f)
+		// re-construct UniqueKmersMap + chromosomes from input file (-f).
+		// stage9: if the index has a per-chromosome split (sidecar
+		// `<prefix>_UniqueKmersMap.meta.cereal`), load per-chrom blobs in
+		// parallel. Otherwise fall back to the legacy single-file blob.
 		string unique_kmers_archive = precomputed_prefix + "_UniqueKmersMap.cereal";
-		check_input_file(unique_kmers_archive);
-		cerr << "Reading precomputed UniqueKmersMap from " << unique_kmers_archive << " ..." << endl;
-		ifstream is(unique_kmers_archive, std::ios::binary);
-		cereal::BinaryInputArchive archive_is( is );
-		archive_is(unique_kmers_list);
+		string meta_archive         = precomputed_prefix + "_UniqueKmersMap.meta.cereal";
+
+		if (file_exists(meta_archive)) {
+			cerr << "Reading precomputed UniqueKmersMap (parallel per-chromosome) from " << precomputed_prefix << "_<chr>_UniqueKmersMap.cereal ..." << endl;
+			vector<string> chrom_list;
+			{
+				ifstream mis(meta_archive, std::ios::binary);
+				cereal::BinaryInputArchive marchive(mis);
+				marchive(unique_kmers_list.kmersize, unique_kmers_list.add_reference, chrom_list);
+			}
+			std::mutex map_mtx;
+			size_t pool_size = min((size_t)nr_core_threads, chrom_list.size());
+			if (pool_size < 1) pool_size = 1;
+			{
+				ThreadPool pool(pool_size);
+				for (const auto& chrom : chrom_list) {
+					string path = precomputed_prefix + "_" + chrom + "_UniqueKmersMap.cereal";
+					function<void()> job = [path, chrom, &unique_kmers_list, &map_mtx]() {
+						vector<shared_ptr<UniqueKmers>> vec;
+						double rt = 0.0, srt = 0.0;
+						{
+							ifstream is(path, std::ios::binary);
+							if (!is.good()) throw runtime_error("missing per-chromosome UniqueKmersMap file: " + path);
+							cereal::BinaryInputArchive ar(is);
+							ar(vec, rt, srt);
+						}
+						std::lock_guard<std::mutex> lk(map_mtx);
+						unique_kmers_list.unique_kmers[chrom] = std::move(vec);
+						unique_kmers_list.runtimes[chrom] = rt;
+						unique_kmers_list.sampling_runtimes[chrom] = srt;
+					};
+					pool.submit(job);
+				}
+			}
+		} else {
+			check_input_file(unique_kmers_archive);
+			cerr << "Reading precomputed UniqueKmersMap from " << unique_kmers_archive << " ..." << endl;
+			ifstream is(unique_kmers_archive, std::ios::binary);
+			cereal::BinaryInputArchive archive_is( is );
+			archive_is(unique_kmers_list);
+		}
 
 		// check if there are any variants
 		size_t variants_read = 0;
