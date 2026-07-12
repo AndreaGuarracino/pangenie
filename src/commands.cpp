@@ -14,6 +14,7 @@
 #include "kmercounter.hpp"
 #include "jellyfishreader.hpp"
 #include "jellyfishcounter.hpp"
+#include "b2sreader.hpp"
 #include "emissionprobabilitycomputer.hpp"
 #include "copynumber.hpp"
 #include "graph.hpp"
@@ -325,6 +326,10 @@ int run_single_command(string precomputed_prefix, string readfile, string reffil
 				cerr << "Read pre-computed read kmer counts ..." << endl;
 				jellyfish::mer_dna::k(kmersize);
 				read_kmer_counts = shared_ptr<JellyfishReader>(new JellyfishReader(readfile, kmersize));
+			} else if (ends_with(readfile, ".b2s")) {
+				cerr << "Read pre-computed back_to_sequences kmer counts ..." << endl;
+				jellyfish::mer_dna::k(kmersize);
+				read_kmer_counts = shared_ptr<B2sReader>(new B2sReader(readfile, kmersize));
 			} else {
 				cerr << "Count kmers in reads ..." << endl;
 
@@ -903,6 +908,10 @@ int run_genotype_command(string precomputed_prefix, string readfile, string outn
 				cerr << "Read pre-computed read kmer counts ..." << endl;
 				jellyfish::mer_dna::k(kmersize);
 				read_kmer_counts = shared_ptr<JellyfishReader>(new JellyfishReader(readfile, kmersize));
+			} else if (ends_with(readfile, ".b2s")) {
+				cerr << "Read pre-computed back_to_sequences kmer counts ..." << endl;
+				jellyfish::mer_dna::k(kmersize);
+				read_kmer_counts = shared_ptr<B2sReader>(new B2sReader(readfile, kmersize));
 			} else {
 				cerr << "Count kmers in reads ..." << endl;
 
@@ -1373,6 +1382,10 @@ int run_sampling(string precomputed_prefix, string readfile, string outname, siz
 				cerr << "Read pre-computed read kmer counts ..." << endl;
 				jellyfish::mer_dna::k(kmersize);
 				read_kmer_counts = shared_ptr<JellyfishReader>(new JellyfishReader(readfile, kmersize));
+			} else if (ends_with(readfile, ".b2s")) {
+				cerr << "Read pre-computed back_to_sequences kmer counts ..." << endl;
+				jellyfish::mer_dna::k(kmersize);
+				read_kmer_counts = shared_ptr<B2sReader>(new B2sReader(readfile, kmersize));
 			} else {
 				cerr << "Count kmers in reads ..." << endl;
 

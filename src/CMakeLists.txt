@@ -14,6 +14,7 @@ add_library(PanGenieLib SHARED
 	hmm.cpp
 	jellyfishcounter.cpp
 	jellyfishreader.cpp
+	b2sreader.cpp
 	kmerpath.cpp
 	kmerpath16.cpp
 	kmerparser.cpp
