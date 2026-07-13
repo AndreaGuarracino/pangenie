@@ -8,8 +8,8 @@
 
 using namespace std;
 
-EmissionProbabilityComputer::EmissionProbabilityComputer(shared_ptr<UniqueKmers> uniquekmers, ProbabilityTable* probabilities)
-        :uniquekmers(uniquekmers),
+EmissionProbabilityComputer::EmissionProbabilityComputer(const shared_ptr<UniqueKmers>& uniquekmers, ProbabilityTable* probabilities)
+	        :uniquekmers(uniquekmers.get()),
          probabilities(probabilities),
          all_zeros(true)
 {
@@ -75,11 +75,6 @@ EmissionProbabilityComputer::EmissionProbabilityComputer(shared_ptr<UniqueKmers>
                         if (result > 0) this->all_zeros = false;
                 }
         }
-}
-
-double EmissionProbabilityComputer::get_emission_probability(unsigned short allele_id1, unsigned short allele_id2) const {
-        if (this->all_zeros) return 1.0;
-        return this->state_to_prob[(size_t)allele_id1 * ((size_t)this->max_allele + 1) + allele_id2];
 }
 
 double EmissionProbabilityComputer::compute_emission_probability(unsigned short allele_id1, unsigned short allele_id2, bool a1_undefined, bool a2_undefined){

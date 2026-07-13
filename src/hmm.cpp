@@ -4,6 +4,7 @@
 #include <functional>
 #include <algorithm>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include "hmm.hpp"
 #include "emissionprobabilitycomputer.hpp"
@@ -11,6 +12,56 @@
 #include <iostream>
 
 using namespace std;
+
+namespace {
+
+size_t upper_triangle_size(size_t dimension) {
+	return dimension * (dimension + 1) / 2;
+}
+
+size_t upper_triangle_index(size_t row, size_t column, size_t dimension) {
+	assert(row <= column);
+	return row * (2 * dimension - row + 1) / 2 + column - row;
+}
+
+struct MaxCandidate {
+	double value = 0.0;
+	size_t index = 0;
+	bool valid = false;
+};
+
+bool is_better(const MaxCandidate& candidate, const MaxCandidate& current) {
+	return candidate.valid && (!current.valid || candidate.value > current.value ||
+		(candidate.value == current.value && candidate.index > current.index));
+}
+
+void keep_best(MaxCandidate& current, const MaxCandidate& candidate) {
+	if (is_better(candidate, current)) current = candidate;
+}
+
+struct TopTwo {
+	MaxCandidate first;
+	MaxCandidate second;
+};
+
+void keep_top_two(TopTwo& top, const MaxCandidate& candidate) {
+	if (is_better(candidate, top.first)) {
+		top.second = top.first;
+		top.first = candidate;
+	} else if (is_better(candidate, top.second)) {
+		top.second = candidate;
+	}
+}
+
+MaxCandidate excluding_column(const TopTwo& top, size_t column, size_t dimension) {
+	return top.first.valid && (top.first.index % dimension != column) ? top.first : top.second;
+}
+
+MaxCandidate excluding_row(const TopTwo& top, size_t row, size_t dimension) {
+	return top.first.valid && (top.first.index / dimension != row) ? top.first : top.second;
+}
+
+} // namespace
 
 
 void print_column(vector<double>* column, ColumnIndexer* indexer) {
@@ -49,13 +100,13 @@ HMM::HMM(vector<shared_ptr<UniqueKmers>>* unique_kmers, ProbabilityTable* probab
         }
 
         // delete objects no longer needed to save space
-        init(this->forward_columns,0);
-        if (this->previous_backward_column != nullptr){
-                delete this->previous_backward_column;
-                this->previous_backward_column = nullptr;
-        }
-        init(this->viterbi_columns,0);
-        init(this->viterbi_backtrace_columns,0);
+	        init(this->forward_columns,0);
+	        if (this->previous_backward_column != nullptr){
+	                release_column(this->previous_backward_column);
+	        }
+	        init(this->viterbi_columns,0);
+	        init(this->viterbi_backtrace_columns,0);
+	        clear_column_pool();
         if (this->column_indexer != nullptr) {
                 delete this->column_indexer;
                 this->column_indexer = nullptr;
@@ -63,10 +114,11 @@ HMM::HMM(vector<shared_ptr<UniqueKmers>>* unique_kmers, ProbabilityTable* probab
 }
 
 HMM::~HMM(){
-        init(this->forward_columns,0);
-        if (this->previous_backward_column != nullptr) delete this->previous_backward_column;
-        init(this->viterbi_columns,0);
-        init(this->viterbi_backtrace_columns,0);
+	        init(this->forward_columns,0);
+	        if (this->previous_backward_column != nullptr) release_column(this->previous_backward_column);
+	        init(this->viterbi_columns,0);
+	        init(this->viterbi_backtrace_columns,0);
+	        clear_column_pool();
         if (this->column_indexer != nullptr) {
                 delete this->column_indexer;
                 this->column_indexer = nullptr;
@@ -83,19 +135,17 @@ void HMM::compute_forward_prob() {
                 compute_forward_column(column_index);
                 // sparse table: check whether to delete previous column
                 if ( (k > 1) && (column_index > 0) && (((column_index - 1)%k != 0)) ) {
-                        delete this->forward_columns[column_index-1];
-                        this->forward_columns[column_index-1] = nullptr;
+	                        release_column(this->forward_columns[column_index-1]);
                 }
         }
 }
 
 void HMM::compute_backward_prob() {
         size_t column_count = this->column_indexer->size();
-        if (column_count == 0) return;
-        if (this->previous_backward_column != nullptr) {
-                delete this->previous_backward_column;
-                this->previous_backward_column = nullptr;
-        }
+	if (column_count == 0) return;
+	if (this->previous_backward_column != nullptr) {
+		release_column(this->previous_backward_column);
+	}
 
         // backward pass
         for (int column_index = column_count-1; column_index >= 0; --column_index) {
@@ -177,53 +227,34 @@ void HMM::compute_forward_column(size_t column_index) {
         size_t variant_id = this->column_indexer->get_variant_id(column_index);
         if (this->forward_columns[column_index] != nullptr) return;
 
-        unsigned short nr_paths = this->column_indexer->nr_paths();
-        std::vector<unsigned short> col_alleles(nr_paths);
-        for (unsigned short p = 0; p < nr_paths; ++p) col_alleles[p] = this->column_indexer->get_allele(p, column_index);
+	        unsigned short nr_paths = this->column_indexer->nr_paths();
+	        const auto col_alleles = this->column_indexer->get_alleles(column_index);
 
         HMMColumn* previous_column = nullptr;
-        TransitionProbabilityComputer* transition_probability_computer = nullptr;
+	        if (column_index > 0) {
+	                previous_column = this->forward_columns[column_index-1];
+	        }
 
-        if (column_index > 0) {
-                previous_column = this->forward_columns[column_index-1];
-                size_t prev_index = this->column_indexer->get_variant_id(column_index-1);
-                size_t cur_index = this->column_indexer->get_variant_id(column_index);
-                size_t prev_pos = this->unique_kmers->at(prev_index)->get_variant_position();
-                size_t cur_pos = this->unique_kmers->at(cur_index)->get_variant_position();
-                transition_probability_computer = new TransitionProbabilityComputer(prev_pos, cur_pos, this->recombrate, nr_paths, this->uniform, this->effective_N);
-        }
-
-        HMMColumn* current_column = new HMMColumn();
-        current_column->column.resize((size_t)nr_paths * nr_paths);
+	        HMMColumn* current_column = acquire_column();
+	        current_column->column.resize(upper_triangle_size(nr_paths));
         current_column->row_sums.assign(nr_paths, 0.0);
         EmissionProbabilityComputer emission_probability_computer(this->unique_kmers->at(variant_id), this->probabilities);
 
         const double* prev_buf = (column_index > 0) ? previous_column->column.data() : nullptr;
         const double* prev_row_sums = (column_index > 0) ? previous_column->row_sums.data() : nullptr;
 
-        // Use cached row sums if available, else compute.
-        std::vector<double> helper_i_vec;
-        const double* helper_i = nullptr;
-        if (column_index > 0) {
-                if (prev_row_sums && !previous_column->row_sums.empty()) {
-                        helper_i = prev_row_sums;
-                } else {
-                        helper_i_vec.assign(nr_paths, 0.0);
-                        for (unsigned short p = 0; p < nr_paths; ++p) {
-                                double row_sum = 0.0;
-                                const double* row_ptr = prev_buf + (size_t)p * nr_paths;
-                                for (unsigned short q = 0; q < nr_paths; ++q) row_sum += row_ptr[q];
-                                helper_i_vec[p] = row_sum;
-                        }
-                        helper_i = helper_i_vec.data();
-                }
-        }
+	        const double* helper_i = (column_index > 0) ? prev_row_sums : nullptr;
 
-        double trans0 = 0.0, trans1 = 0.0, trans2 = 0.0;
-        if (column_index > 0) {
-                trans0 = transition_probability_computer->compute_transition_prob(0);
-                trans1 = transition_probability_computer->compute_transition_prob(1);
-                trans2 = transition_probability_computer->compute_transition_prob(2);
+	        double trans0 = 0.0, trans1 = 0.0, trans2 = 0.0;
+	        if (column_index > 0) {
+	                size_t prev_index = this->column_indexer->get_variant_id(column_index-1);
+	                size_t cur_index = this->column_indexer->get_variant_id(column_index);
+	                size_t prev_pos = this->unique_kmers->at(prev_index)->get_variant_position();
+	                size_t cur_pos = this->unique_kmers->at(cur_index)->get_variant_position();
+	                TransitionProbabilityComputer transitions(prev_pos, cur_pos, this->recombrate, nr_paths, this->uniform, this->effective_N);
+	                trans0 = transitions.compute_transition_prob(0);
+	                trans1 = transitions.compute_transition_prob(1);
+	                trans2 = transitions.compute_transition_prob(2);
         }
 
         double A = trans0 - 2.0 * trans1 + trans2;
@@ -234,14 +265,15 @@ void HMM::compute_forward_column(size_t column_index) {
         double* cur_buf = current_column->column.data();
         double* cur_row_sums = current_column->row_sums.data();
 
-        for (unsigned short p = 0; p < nr_paths; ++p) {
-                unsigned short a1 = col_alleles[p];
-                double hi = (column_index > 0) ? helper_i[p] : 0.0;
-                double row_sum = 0.0;
-                for (unsigned short q = p; q < nr_paths; ++q) {
-                        double previous_cell;
-                        if (column_index > 0) {
-                                double prev_pq = prev_buf[(size_t)p * nr_paths + q];
+	        for (unsigned short p = 0; p < nr_paths; ++p) {
+	                unsigned short a1 = col_alleles[p];
+	                double hi = (column_index > 0) ? helper_i[p] : 0.0;
+	                double row_sum = 0.0;
+	                size_t cell_index = upper_triangle_index(p, p, nr_paths);
+	                for (unsigned short q = p; q < nr_paths; ++q) {
+	                        double previous_cell;
+	                        if (column_index > 0) {
+	                                double prev_pq = prev_buf[cell_index];
                                 double hj = helper_i[q];
                                 previous_cell = prev_pq * A + (hi + hj) * B + C;
                         } else {
@@ -251,33 +283,36 @@ void HMM::compute_forward_column(size_t column_index) {
                         double ep = emission_probability_computer.get_emission_probability(a1, col_alleles[q]);
                         double cell = previous_cell * ep;
                         
-                        cur_buf[(size_t)p * nr_paths + q] = cell;
-                        row_sum += cell;
-                        if (p != q) {
-                                cur_buf[(size_t)q * nr_paths + p] = cell;
-                                cur_row_sums[q] += cell;
+	                        cur_buf[cell_index] = cell;
+	                        row_sum += cell;
+	                        if (p != q) {
+	                                cur_row_sums[q] += cell;
                                 normalization_sum += 2.0 * cell;
-                        } else {
-                                normalization_sum += cell;
-                        }
-                }
+	                        } else {
+	                                normalization_sum += cell;
+	                        }
+	                        ++cell_index;
+	                }
                 cur_row_sums[p] += row_sum;
         }
 
-        if (normalization_sum > 0.0) {
-                double inv_sum = 1.0 / normalization_sum;
-                for (size_t j = 0; j < (size_t)nr_paths * nr_paths; ++j) cur_buf[j] *= inv_sum;
-                for (unsigned short p = 0; p < nr_paths; ++p) cur_row_sums[p] *= inv_sum;
+	        if (normalization_sum > 0.0) {
+	                double inv_sum = 1.0 / normalization_sum;
+	                for (unsigned short p = 0; p < nr_paths; ++p) {
+	                        const size_t row_begin = upper_triangle_index(p, p, nr_paths);
+	                        const size_t row_end = row_begin + nr_paths - p;
+	                        for (size_t i = row_begin; i < row_end; ++i) cur_buf[i] *= inv_sum;
+	                }
+	                for (unsigned short p = 0; p < nr_paths; ++p) cur_row_sums[p] *= inv_sum;
                 current_column->forward_normalization_sum = normalization_sum;
         } else {
-                double uniform = 1.0 / (double) (nr_paths * nr_paths);
-                fill(current_column->column.begin(), current_column->column.end(), uniform);
+	                double uniform = 1.0 / (double) (nr_paths * nr_paths);
+	                fill(current_column->column.begin(), current_column->column.end(), uniform);
                 fill(current_column->row_sums.begin(), current_column->row_sums.end(), 1.0 / (double)nr_paths);
                 current_column->forward_normalization_sum = 1.0;
         }
 
-        this->forward_columns[column_index] = current_column;
-        if (transition_probability_computer != nullptr) delete transition_probability_computer;
+	        this->forward_columns[column_index] = current_column;
 }
 
 void HMM::compute_backward_column(size_t column_index) {
@@ -285,13 +320,12 @@ void HMM::compute_backward_column(size_t column_index) {
         assert(column_index < column_count);
         size_t variant_id = this->column_indexer->get_variant_id(column_index);
 
-        unsigned short nr_paths = column_indexer->nr_paths();
-        std::vector<unsigned short> col_alleles(nr_paths);
-        for (unsigned short p = 0; p < nr_paths; ++p) col_alleles[p] = this->column_indexer->get_allele(p, column_index);
+	        unsigned short nr_paths = column_indexer->nr_paths();
+	        const auto col_alleles = this->column_indexer->get_alleles(column_index);
 
-        TransitionProbabilityComputer* transition_probability_computer = nullptr;
-        EmissionProbabilityComputer* next_emission_computer = nullptr;
-        HMMColumn* forward_column = this->forward_columns[column_index];
+	        optional<TransitionProbabilityComputer> transition_probability_computer;
+	        optional<EmissionProbabilityComputer> next_emission_computer;
+	        HMMColumn* forward_column = this->forward_columns[column_index];
 
         if (column_index < column_count-1) {
                 assert (this->previous_backward_column != nullptr);
@@ -299,8 +333,8 @@ void HMM::compute_backward_column(size_t column_index) {
                 size_t next_v_id = this->column_indexer->get_variant_id(column_index+1);
                 size_t cur_pos = this->unique_kmers->at(cur_v_id)->get_variant_position();
                 size_t next_pos = this->unique_kmers->at(next_v_id)->get_variant_position();
-                transition_probability_computer = new TransitionProbabilityComputer(cur_pos, next_pos, this->recombrate, nr_paths, this->uniform, this->effective_N);
-                next_emission_computer = new EmissionProbabilityComputer(this->unique_kmers->at(next_v_id), this->probabilities);
+	                transition_probability_computer.emplace(cur_pos, next_pos, this->recombrate, nr_paths, this->uniform, this->effective_N);
+	                next_emission_computer.emplace(this->unique_kmers->at(next_v_id), this->probabilities);
 
                 if (forward_column == nullptr) {
                         size_t k = (size_t)sqrt(column_count);
@@ -310,37 +344,38 @@ void HMM::compute_backward_column(size_t column_index) {
                 }
         }
 
-        vector<double> helper_i(nr_paths, 0.0);
-        const double* prev_back_buf = (column_index < column_count - 1) ? this->previous_backward_column->column.data() : nullptr;
+	        vector<double> helper_i(nr_paths, 0.0);
+	        const double* prev_back_buf = (column_index < column_count - 1) ? this->previous_backward_column->column.data() : nullptr;
+	        HMMColumn* current_column = acquire_column();
+	        current_column->column.resize(upper_triangle_size(nr_paths));
+	        double* cur_back_buf = current_column->column.data();
 
-        std::vector<unsigned short> next_alleles;
+	        std::span<const unsigned short> next_alleles;
         double helper_ij = 0.0;
         if (column_index < column_count - 1) {
-                next_alleles.resize(nr_paths);
-                for (unsigned short p = 0; p < nr_paths; ++p) next_alleles[p] = this->column_indexer->get_allele(p, column_index + 1);
+	                next_alleles = this->column_indexer->get_alleles(column_index + 1);
 
-                for (unsigned short p = 0; p < nr_paths; ++p) {
-                        double row_sum = 0.0;
-                        unsigned short a1 = next_alleles[p];
-                        for (unsigned short q = p; q < nr_paths; ++q) {
-                                double term = prev_back_buf[(size_t)p * nr_paths + q] * next_emission_computer->get_emission_probability(a1, next_alleles[q]);
+	                for (unsigned short p = 0; p < nr_paths; ++p) {
+	                        double row_sum = 0.0;
+	                        unsigned short a1 = next_alleles[p];
+	                        size_t cell_index = upper_triangle_index(p, p, nr_paths);
+	                        for (unsigned short q = p; q < nr_paths; ++q) {
+	                                double term = prev_back_buf[cell_index] * next_emission_computer->get_emission_probability(a1, next_alleles[q]);
+	                                cur_back_buf[cell_index] = term;
                                 row_sum += term;
                                 if (p != q) {
                                         helper_i[q] += term;
                                         helper_ij += 2.0 * term;
-                                } else {
-                                        helper_ij += term;
-                                }
-                        }
+	                                } else {
+	                                        helper_ij += term;
+	                                }
+	                                ++cell_index;
+	                        }
                         helper_i[p] += row_sum;
                 }
         }
 
-        HMMColumn* current_column = new HMMColumn();
-        current_column->column.resize((size_t)nr_paths * nr_paths);
-        current_column->row_sums.assign(nr_paths, 0.0);
-
-        double trans0 = 0.0, trans1 = 0.0, trans2 = 0.0;
+	        double trans0 = 0.0, trans1 = 0.0, trans2 = 0.0;
         if (column_index < column_count - 1) {
                 trans0 = transition_probability_computer->compute_transition_prob(0);
                 trans1 = transition_probability_computer->compute_transition_prob(1);
@@ -349,14 +384,11 @@ void HMM::compute_backward_column(size_t column_index) {
 
         double A = trans0 - 2.0 * trans1 + trans2;
         double B = trans1 - trans2;
-        double C = helper_ij * trans2;
+	        double C = helper_ij * trans2;
 
-        double normalization_sum = 0.0;
-        double normalization_f_b = 0.0;
-        const double* fwd_buf = forward_column ? forward_column->column.data() : nullptr;
-        double* cur_back_buf = current_column->column.data();
-        double* cur_back_row_sums = current_column->row_sums.data();
-        double fwd_norm = forward_column ? forward_column->forward_normalization_sum : 1.0;
+	        double normalization_sum = 0.0;
+	        const double* fwd_buf = forward_column ? forward_column->column.data() : nullptr;
+	        double fwd_norm = forward_column ? forward_column->forward_normalization_sum : 1.0;
 
         unsigned short max_allele = 0;
         for (auto a : col_alleles) if (a > max_allele) max_allele = a;
@@ -373,45 +405,40 @@ void HMM::compute_backward_column(size_t column_index) {
                 acc_buf = heap_acc.data();
         }
 
-        for (unsigned short p = 0; p < nr_paths; ++p) {
-                unsigned short a1 = col_alleles[p];
-                double hi = helper_i[p];
-                double row_sum = 0.0;
-                for (unsigned short q = p; q < nr_paths; ++q) {
-                        double backward_prob;
-                        if (column_index < column_count - 1) {
-                                double h_cell = prev_back_buf[(size_t)p * nr_paths + q] * next_emission_computer->get_emission_probability(next_alleles[p], next_alleles[q]);
+	        for (unsigned short p = 0; p < nr_paths; ++p) {
+	                unsigned short a1 = col_alleles[p];
+	                double hi = helper_i[p];
+	                size_t cell_index = upper_triangle_index(p, p, nr_paths);
+	                for (unsigned short q = p; q < nr_paths; ++q) {
+	                        double backward_prob;
+	                        if (column_index < column_count - 1) {
+	                                double h_cell = cur_back_buf[cell_index];
                                 double hj = helper_i[q];
                                 backward_prob = h_cell * A + (hi + hj) * B + C;
                         } else {
                                 backward_prob = 1.0;
                         }
 
-                        cur_back_buf[(size_t)p * nr_paths + q] = backward_prob;
-                        row_sum += backward_prob;
-                        if (p != q) {
-                                cur_back_buf[(size_t)q * nr_paths + p] = backward_prob;
-                                cur_back_row_sums[q] += backward_prob;
-                                normalization_sum += 2.0 * backward_prob;
+	                        cur_back_buf[cell_index] = backward_prob;
+	                        if (p != q) {
+	                                normalization_sum += 2.0 * backward_prob;
                         } else {
                                 normalization_sum += backward_prob;
                         }
 
                         if (forward_column != nullptr) {
-                                double posterior = fwd_buf[(size_t)p * nr_paths + q] * backward_prob;
+	                                double posterior = fwd_buf[cell_index] * backward_prob;
                                 unsigned short a2 = col_alleles[q];
                                 if (p != q) {
-                                        acc_buf[(size_t)a1 * N + a2] += posterior * fwd_norm;
-                                        acc_buf[(size_t)a2 * N + a1] += posterior * fwd_norm;
-                                        normalization_f_b += 2.0 * posterior;
-                                } else {
-                                        acc_buf[(size_t)a1 * N + a2] += posterior * fwd_norm;
-                                        normalization_f_b += posterior;
-                                }
-                        }
-                }
-                cur_back_row_sums[p] += row_sum;
-        }
+	                                        acc_buf[(size_t)a1 * N + a2] += posterior * fwd_norm;
+	                                        acc_buf[(size_t)a2 * N + a1] += posterior * fwd_norm;
+	                                } else {
+	                                        acc_buf[(size_t)a1 * N + a2] += posterior * fwd_norm;
+	                                }
+	                        }
+	                        ++cell_index;
+	                }
+	        }
 
         {
                 auto& result_for_variant = this->genotyping_result.at(variant_id);
@@ -423,91 +450,125 @@ void HMM::compute_backward_column(size_t column_index) {
                 }
         }
 
-        if (normalization_sum > 0.0) {
-                double inv_sum = 1.0 / normalization_sum;
-                for (size_t j = 0; j < (size_t)nr_paths * nr_paths; ++j) cur_back_buf[j] *= inv_sum;
-                for (unsigned short p = 0; p < nr_paths; ++p) cur_back_row_sums[p] *= inv_sum;
-        } else {
-                double uniform = 1.0 / (double) (nr_paths * nr_paths);
-                fill(current_column->column.begin(), current_column->column.end(), uniform);
-                fill(current_column->row_sums.begin(), current_column->row_sums.end(), 1.0 / (double)nr_paths);
-        }
+	        if (normalization_sum > 0.0) {
+	                double inv_sum = 1.0 / normalization_sum;
+	                for (unsigned short p = 0; p < nr_paths; ++p) {
+	                        const size_t row_begin = upper_triangle_index(p, p, nr_paths);
+	                        const size_t row_end = row_begin + nr_paths - p;
+	                        for (size_t i = row_begin; i < row_end; ++i) cur_back_buf[i] *= inv_sum;
+	                }
+	        } else {
+	                double uniform = 1.0 / (double) (nr_paths * nr_paths);
+	                fill(current_column->column.begin(), current_column->column.end(), uniform);
+	        }
 
-        if (this->previous_backward_column != nullptr) delete this->previous_backward_column;
-        this->previous_backward_column = current_column;
-        if (next_emission_computer != nullptr) delete next_emission_computer;
+	        if (this->previous_backward_column != nullptr) release_column(this->previous_backward_column);
+	        this->previous_backward_column = current_column;
 
-        if (this->forward_columns[column_index] != nullptr) {
-                delete this->forward_columns[column_index];
-                this->forward_columns[column_index] = nullptr;
-        }
-        if (transition_probability_computer != nullptr) delete transition_probability_computer;
+	        if (this->forward_columns[column_index] != nullptr) {
+	                release_column(this->forward_columns[column_index]);
+	        }
+}
+
+HMMColumn* HMM::acquire_column() {
+	if (this->column_pool.empty()) return new HMMColumn();
+	HMMColumn* column = this->column_pool.back();
+	this->column_pool.pop_back();
+	return column;
+}
+
+void HMM::release_column(HMMColumn*& column) {
+	if (column == nullptr) return;
+	this->column_pool.push_back(column);
+	column = nullptr;
+}
+
+void HMM::clear_column_pool() {
+	for (HMMColumn* column : this->column_pool) delete column;
+	this->column_pool.clear();
 }
 
 void HMM::compute_viterbi_column(size_t column_index) {
-        assert(column_index < this->column_indexer->size());
-        size_t variant_id = this->column_indexer->get_variant_id(column_index);
-        if (this->viterbi_columns[column_index] != nullptr) return;
-        HMMColumn* previous_column = nullptr;
-        unsigned short nr_paths = column_indexer->nr_paths();
-        TransitionProbabilityComputer* transition_probability_computer = nullptr;
-        if (column_index > 0) {
-                previous_column = this->viterbi_columns[column_index-1];
-                size_t prev_index = this->column_indexer->get_variant_id(column_index-1);
-                size_t cur_index = this->column_indexer->get_variant_id(column_index);
-                size_t prev_pos = this->unique_kmers->at(prev_index)->get_variant_position();
-                size_t cur_pos = this->unique_kmers->at(cur_index)->get_variant_position();
-                transition_probability_computer = new TransitionProbabilityComputer(prev_pos, cur_pos, this->recombrate, nr_paths, this->uniform, this->effective_N);
-        }
-        HMMColumn* current_column = new HMMColumn();
-        EmissionProbabilityComputer emission_probability_computer(this->unique_kmers->at(variant_id), this->probabilities);
-        double normalization_sum = 0.0;
-        vector<size_t>* backtrace_column = new vector<size_t>();
-        for (unsigned short path_id1 = 0; path_id1 < nr_paths; ++path_id1) {
-                for (unsigned short path_id2 = 0; path_id2 < nr_paths; ++path_id2) {
-                        unsigned short path1 = this->column_indexer->get_path(path_id1);
-                        unsigned short path2 = this->column_indexer->get_path(path_id2);
-                        double previous_cell = 0.0;
-                        if (column_index > 0) {
-                                size_t j = 0;
-                                double max_value = 0.0;
-                                size_t max_index = 0;
-                                for (unsigned short prev_path_id1 = 0; prev_path_id1 < nr_paths; ++prev_path_id1) {
-                                        for (unsigned short prev_path_id2 = 0; prev_path_id2 < nr_paths; ++prev_path_id2) {
-                                                unsigned short prev_path1 = this->column_indexer->get_path(prev_path_id1);
-                                                unsigned short prev_path2 = this->column_indexer->get_path(prev_path_id2);
-                                                double prev_prob = previous_column->column.at(j);
-                                                double transition_prob = transition_probability_computer->compute_transition_prob(prev_path1, prev_path2, path1, path2);
-                                                prev_prob *= transition_prob;
-                                                if (prev_prob >= max_value) {
-                                                        max_value = prev_prob;
-                                                        max_index = j;
-                                                }
-                                                j += 1;
-                                        }
-                                }
-                                previous_cell = max_value;
-                                backtrace_column->push_back(max_index);
-                        } else {
-                                previous_cell = 1.0;
-                        }
-                        unsigned short allele1 = this->column_indexer->get_allele(path_id1, column_index);
-                        unsigned short allele2 = this->column_indexer->get_allele(path_id2, column_index);
-                        double emission_prob = emission_probability_computer.get_emission_probability(allele1,allele2);
-                        double current_cell = previous_cell * emission_prob;
-                        current_column->column.push_back(current_cell);
-                        normalization_sum += current_cell;
-                }
-        }
-        if (normalization_sum > 0.0) {
-                transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(), bind(divides<double>(), placeholders::_1, normalization_sum));
-        } else {
-                double uniform = 1.0 / (double) current_column->column.size();
-                transform(current_column->column.begin(), current_column->column.end(), current_column->column.begin(),  [uniform](double c) -> double {return uniform;});
-        }
-        this->viterbi_columns[column_index] = current_column;
-        this->viterbi_backtrace_columns[column_index] = backtrace_column;
-        if (transition_probability_computer != nullptr) delete transition_probability_computer;
+	assert(column_index < this->column_indexer->size());
+	const size_t variant_id = this->column_indexer->get_variant_id(column_index);
+	if (this->viterbi_columns[column_index] != nullptr) return;
+
+	const unsigned short nr_paths = column_indexer->nr_paths();
+	const size_t state_count = (size_t)nr_paths * nr_paths;
+	const auto col_alleles = this->column_indexer->get_alleles(column_index);
+	HMMColumn* previous_column = column_index > 0 ? this->viterbi_columns[column_index - 1] : nullptr;
+	HMMColumn* current_column = new HMMColumn();
+	current_column->column.resize(state_count);
+	vector<size_t>* backtrace_column = new vector<size_t>();
+	if (column_index > 0) backtrace_column->resize(state_count);
+
+	vector<TopTwo> one_switch_rows;
+	vector<TopTwo> one_switch_columns;
+	vector<TopTwo> two_switch_rows;
+	vector<TopTwo> two_switch_excluding_column;
+	double trans0 = 0.0;
+
+	if (column_index > 0) {
+		const size_t prev_index = this->column_indexer->get_variant_id(column_index - 1);
+		const size_t prev_pos = this->unique_kmers->at(prev_index)->get_variant_position();
+		const size_t cur_pos = this->unique_kmers->at(variant_id)->get_variant_position();
+		TransitionProbabilityComputer transitions(prev_pos, cur_pos, this->recombrate, nr_paths, this->uniform, this->effective_N);
+		trans0 = transitions.compute_transition_prob(0);
+		const double trans1 = transitions.compute_transition_prob(1);
+		const double trans2 = transitions.compute_transition_prob(2);
+
+		one_switch_rows.resize(nr_paths);
+		one_switch_columns.resize(nr_paths);
+		two_switch_rows.resize(nr_paths);
+		two_switch_excluding_column.resize(nr_paths);
+		for (unsigned short row = 0; row < nr_paths; ++row) {
+			for (unsigned short column = 0; column < nr_paths; ++column) {
+				const size_t index = (size_t)row * nr_paths + column;
+				const double previous = previous_column->column[index];
+				const MaxCandidate one_switch{previous * trans1, index, true};
+				keep_top_two(one_switch_rows[row], one_switch);
+				keep_top_two(one_switch_columns[column], one_switch);
+				keep_top_two(two_switch_rows[row], {previous * trans2, index, true});
+			}
+		}
+
+		for (unsigned short excluded_column = 0; excluded_column < nr_paths; ++excluded_column) {
+			for (unsigned short row = 0; row < nr_paths; ++row) {
+				keep_top_two(two_switch_excluding_column[excluded_column],
+					excluding_column(two_switch_rows[row], excluded_column, nr_paths));
+			}
+		}
+	}
+
+	EmissionProbabilityComputer emission_probability_computer(this->unique_kmers->at(variant_id), this->probabilities);
+	double normalization_sum = 0.0;
+	for (unsigned short path_id1 = 0; path_id1 < nr_paths; ++path_id1) {
+		for (unsigned short path_id2 = 0; path_id2 < nr_paths; ++path_id2) {
+			const size_t state_index = (size_t)path_id1 * nr_paths + path_id2;
+			double previous_cell = 1.0;
+			if (column_index > 0) {
+				MaxCandidate best{previous_column->column[state_index] * trans0, state_index, true};
+				keep_best(best, excluding_column(one_switch_rows[path_id1], path_id2, nr_paths));
+				keep_best(best, excluding_row(one_switch_columns[path_id2], path_id1, nr_paths));
+				keep_best(best, excluding_row(two_switch_excluding_column[path_id2], path_id1, nr_paths));
+				previous_cell = best.value;
+				(*backtrace_column)[state_index] = best.index;
+			}
+
+			const double emission_prob = emission_probability_computer.get_emission_probability(col_alleles[path_id1], col_alleles[path_id2]);
+			const double current_cell = previous_cell * emission_prob;
+			current_column->column[state_index] = current_cell;
+			normalization_sum += current_cell;
+		}
+	}
+
+	if (normalization_sum > 0.0) {
+		for (double& value : current_column->column) value /= normalization_sum;
+	} else {
+		fill(current_column->column.begin(), current_column->column.end(), 1.0 / (double)state_count);
+	}
+	this->viterbi_columns[column_index] = current_column;
+	this->viterbi_backtrace_columns[column_index] = backtrace_column;
 }
 
 vector<GenotypingResult> HMM::get_genotyping_result() const {
@@ -523,7 +584,7 @@ void HMM::combine_likelihoods(HMM& other) {
                 throw runtime_error("HMM::combine_likelihoods: HMMs to be combined must be of the same size.");
         }
         size_t index = 0;
-        for (auto likelihoods : other.genotyping_result) {
+	        for (const auto& likelihoods : other.genotyping_result) {
                 this->genotyping_result.at(index).combine(likelihoods);
                 index += 1;
         }

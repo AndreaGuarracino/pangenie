@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <stdexcept>
 #include "dnasequence.hpp"
 #include <iostream>
@@ -10,14 +11,14 @@ DnaSequence::DnaSequence()
 	 is_undefined(false)
 {}
 
-DnaSequence::DnaSequence(string& sequence)
+DnaSequence::DnaSequence(const string& sequence)
 	:even_length(true),
 	 is_undefined(false)
 {
 	this->append(sequence);	
 }
 
-void DnaSequence::append(string& seq) {
+void DnaSequence::append(const string& seq) {
 	for (auto base : seq) {
 		unsigned char number = encode(base);
 		// check whether base was defined
@@ -33,16 +34,20 @@ void DnaSequence::append(string& seq) {
 	}
 }
 
-void DnaSequence::append(DnaSequence seq) {
+void DnaSequence::append(const DnaSequence& seq) {
+	if (this == &seq) {
+		DnaSequence copy(seq);
+		this->append(copy);
+		return;
+	}
+	const size_t seq_size = seq.size();
 	if (this->even_length) {
-		for (size_t i = 0; i < seq.sequence.size(); ++i) {
-			this->sequence.push_back(seq.sequence.at(i));
-		}
+		this->sequence.insert(this->sequence.end(), seq.sequence.begin(), seq.sequence.end());
 	} else {
-		if (seq.size() == 0) return;
+		if (seq_size == 0) return;
 		unsigned char current = this->sequence.at(this->sequence.size()-1);
 		this->sequence.pop_back();
-		for (size_t i = 0; i < seq.size(); ++i) {
+		for (size_t i = 0; i < seq_size; ++i) {
 			unsigned char s = seq.sequence.at(i/2);
 			if (i % 2 == 0) {
 				current |= (s >> 4);
@@ -51,10 +56,10 @@ void DnaSequence::append(DnaSequence seq) {
 				current = (s << 4);
 			}
 		}
-		if (seq.size() % 2 == 0) this->sequence.push_back(current);
+		if (seq_size % 2 == 0) this->sequence.push_back(current);
 	}
-	this->even_length = this->even_length == (seq.size() % 2 == 0);
-	this->is_undefined = this->is_undefined || seq.contains_undefined();
+	this->even_length = this->even_length == (seq_size % 2 == 0);
+	this->is_undefined = this->is_undefined || seq.is_undefined;
 }
 
 void DnaSequence::reverse() {
@@ -125,6 +130,7 @@ DnaSequence DnaSequence::base_at(size_t position) const {
 		result.sequence.push_back(number << 4);
 	}
 	result.even_length = false;
+	result.is_undefined = ((number >> ((position % 2 == 0) ? 4 : 0)) & 15) == 4;
 	return result;
 }
 
@@ -137,9 +143,9 @@ size_t DnaSequence::size() const {
 }
 
 void DnaSequence::substr(size_t start, size_t end, string& result) const {
-	result.clear();
+	result.resize(end - start);
 	for (size_t i = start; i < end; ++i) {
-		result += (*this)[i];
+		result[i - start] = (*this)[i];
 	}
 }
 
@@ -180,9 +186,9 @@ void DnaSequence::substr(size_t start, size_t end, DnaSequence& result) const {
 }
 
 string DnaSequence::to_string() const {
-	string result;
+	string result(this->size(), '\0');
 	for (size_t i = 0; i < this->size(); ++i) {
-		result += (*this)[i];
+		result[i] = (*this)[i];
 	}
 	return result;
 }
@@ -190,11 +196,17 @@ string DnaSequence::to_string() const {
 void DnaSequence::clear() {
 	this->sequence.clear();
 	this->even_length = true;
+	this->is_undefined = false;
 }
 
 bool DnaSequence::operator<(const DnaSequence& dna) const {
-	return this->to_string() < dna.to_string();
-//	return (this->sequence < dna.sequence);
+	const size_t common_size = min(this->size(), dna.size());
+	for (size_t i = 0; i < common_size; ++i) {
+		const char left = (*this)[i];
+		const char right = dna[i];
+		if (left != right) return left < right;
+	}
+	return this->size() < dna.size();
 }
 
 bool operator==(const DnaSequence& dna1, const DnaSequence& dna2) {

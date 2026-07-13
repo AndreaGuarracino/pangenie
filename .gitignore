@@ -1,4 +1,5 @@
 build-*/
+build/
 tests/data/UniqueKmerComputerTest.fa
 tests/data/kmers.tsv.gz
 tests/data/small1-genotypes-graph.vcf

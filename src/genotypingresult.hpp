@@ -32,6 +32,8 @@ namespace cereal
 
 class GenotypingResult {
 public:
+	using LikelihoodKey = std::pair<unsigned short, unsigned short>;
+	using LikelihoodEntry = std::pair<LikelihoodKey, double>;
 	GenotypingResult();
 	/** add value to genotype likelihood
 	* @param allele1 first genotype allele (arbitrary order)
@@ -47,6 +49,7 @@ public:
 	double get_genotype_likelihood(unsigned short allele1, unsigned short allele2) const;
 	/** get all likelihoods ordered as defined in VCF specification. **/
 	std::vector<double> get_all_likelihoods (size_t nr_alleles) const;
+	void get_all_likelihoods(size_t nr_alleles, std::vector<double>& result) const;
 	/** get all likelihoods for genotypes containing the given alleles. Likelihoods are normalized so sum up to 1. 
 	NOTE: haplotype alleles are set only if they occur in the list of given alleles. Otherwise (i.e. if undefined), they are 0.**/
 	GenotypingResult get_specific_likelihoods (std::vector<unsigned short>& alleles) const;
@@ -62,7 +65,7 @@ public:
 	/** add the given likelihoods. Haplotypes, kmer_counts and coverage are not changed,
 	 ** only the likelihoods are modified and not normalized.
 	 **/
-	void combine(GenotypingResult& likelihoods);
+	void combine(const GenotypingResult& likelihoods);
 	void normalize();
 	void set_unique_kmers(unsigned short nr_unique_kmers);
 	void set_coverage(unsigned short coverage);
@@ -72,16 +75,24 @@ public:
 	bool contains_no_likelihoods() const;
 
 	/** provide access to stored likelihoods **/
-	const std::map < std::pair<unsigned short,unsigned short>, double >& get_stored_likelihoods() const;
+	const std::vector<LikelihoodEntry>& get_stored_likelihoods() const;
 
 	template<class Archive>
-	void serialize(Archive& archive) {
-		archive(genotype_to_likelihood, haplotype_1, haplotype_2, local_coverage, unique_kmers);
+	void save(Archive& archive) const {
+		std::map<LikelihoodKey, double> serialized_likelihoods(genotype_to_likelihood.begin(), genotype_to_likelihood.end());
+		archive(serialized_likelihoods, haplotype_1, haplotype_2, local_coverage, unique_kmers);
+	}
+
+	template<class Archive>
+	void load(Archive& archive) {
+		std::map<LikelihoodKey, double> serialized_likelihoods;
+		archive(serialized_likelihoods, haplotype_1, haplotype_2, local_coverage, unique_kmers);
+		genotype_to_likelihood.assign(serialized_likelihoods.begin(), serialized_likelihoods.end());
 	}
 
 private:
 	/** map genotype -> likelihood. genotype alleles are ordered in ascending order **/
-	std::map < std::pair<unsigned short,unsigned short>, double > genotype_to_likelihood;
+	std::vector<LikelihoodEntry> genotype_to_likelihood;
 	unsigned short haplotype_1;
 	unsigned short haplotype_2;
 	unsigned short local_coverage;

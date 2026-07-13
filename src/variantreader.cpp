@@ -1,13 +1,14 @@
+#include <algorithm>
+#include <charconv>
 #include <sstream>
 #include <iostream>
 #include <iomanip>
 #include <math.h>
-#include <regex>
 #include "variantreader.hpp"
 
 using namespace std;
 
-void parse_line(vector<DnaSequence>& result, string line, char sep) {
+void parse_line(vector<DnaSequence>& result, const string& line, char sep) {
 	string token;
 	istringstream iss (line);
 	while (getline(iss, token, sep)) {
@@ -15,7 +16,7 @@ void parse_line(vector<DnaSequence>& result, string line, char sep) {
 	}
 }
 
-void parse_line(vector<string>& result, string line, char sep) {
+void parse_line(vector<string>& result, const string& line, char sep) {
 	string token;
 	istringstream iss (line);
 	while (getline(iss, token, sep)) {
@@ -50,28 +51,21 @@ string VariantReader::get_ids(string chromosome, vector<string>& alleles, size_t
 	return result;
 }
 
-bool matches_pattern(string& sequence, regex& r) {
-	size_t total_length = sequence.size();
-	string control = "";
-	auto begin = sequence.begin();
-	size_t length = 1000;
-	size_t letters_seen = 0;
-	while (begin + letters_seen != sequence.end()) {
-		size_t next_interval = min(length, total_length - letters_seen);
-		if (!regex_match(begin + letters_seen, begin + letters_seen + next_interval, r)) {
-			return false;
+bool has_explicit_alleles(const string& sequence) {
+	return !sequence.empty() && all_of(sequence.begin(), sequence.end(), [](char base) {
+		switch (base) {
+			case 'A': case 'C': case 'G': case 'T':
+			case 'a': case 'c': case 'g': case 't':
+			case ',': return true;
+			default: return false;
 		}
-		control += string(begin + letters_seen, begin + letters_seen + next_interval);
-		letters_seen += next_interval;
-	}
-	assert(control == sequence);
-	return true;
+	});
 }
 
-void parse_info_fields(vector<string>& result, string line) {
+void parse_info_fields(vector<string>& result, const string& line) {
 	vector<string> fields;
 	parse_line(fields, line, ';');
-	for (auto s : fields) {
+	for (const auto& s : fields) {
 		if (s.rfind("ID=", 0) == 0) {
 			// ID field present
 			parse_line(result, s.substr (3), ',');
@@ -133,9 +127,11 @@ VariantReader::VariantReader(string filename, string reference_filename, size_t 
 		// get chromosome
 		string current_chrom = tokens[0];
 		// get position
-		size_t current_start_pos;
-		stringstream sstream(tokens[1]);
-		sstream >> current_start_pos;
+		size_t current_start_pos = 0;
+		auto position_result = from_chars(tokens[1].data(), tokens[1].data() + tokens[1].size(), current_start_pos);
+		if (position_result.ec != errc() || position_result.ptr != tokens[1].data() + tokens[1].size() || current_start_pos == 0) {
+			throw runtime_error("VariantReader::VariantReader: invalid VCF position.");
+		}
 		// VCF positions are 1-based
 		current_start_pos -= 1;
 		// if variant is contained in previous one, skip it
@@ -160,9 +156,7 @@ VariantReader::VariantReader(string filename, string reference_filename, size_t 
 		// get ALT alleles
 		vector<DnaSequence> alleles = {ref};
 		// make sure alt alleles are given explicitly
-		regex r("^[CAGTcagt,]+$");
-		if (!matches_pattern(tokens[4], r)) {
-//		if (!regex_match(tokens[4], r)) {
+		if (!has_explicit_alleles(tokens[4])) {
 			// skip this position
 			cerr << "VariantReader: skip variant at " << current_chrom << ":" << current_start_pos << " since alleles contain undefined nucleotides: " << tokens[4] << endl;
 			continue;

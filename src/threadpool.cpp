@@ -8,7 +8,7 @@ ThreadPool::ThreadPool (size_t nr_threads)
 	  threads (nr_threads)
 {
 	for (auto& t: this->threads) {
-		t = thread([=](){process_jobs();});
+		t = thread([this](){process_jobs();});
 	}
 }
 

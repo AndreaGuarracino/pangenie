@@ -1,7 +1,7 @@
 #ifndef COPYNUMBER_H
 #define COPYNUMBER_H
 
-#include <vector>
+#include <array>
 
 /** Represents probabilities of a kmer to have copy numbers 0,1 and 2. **/
 
@@ -20,6 +20,6 @@ public:
 	bool operator==(const CopyNumber &other) const;
 	bool operator!=(const CopyNumber &other) const;
 private:
-	std::vector<double> probabilities;
+	std::array<double, 3> probabilities;
 };
 #endif // COPYNUMBER_H

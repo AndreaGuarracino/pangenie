@@ -19,7 +19,7 @@ BiallelicUniqueKmers::BiallelicUniqueKmers(size_t variant_position, vector<unsig
 		}
 		bool allele = (bool) a;
 		this->path_to_allele[i] = allele;
-		this->alleles[allele] = AlleleInfo16();
+		this->alleles[allele].is_present = true;
 	}
 }
 
@@ -42,6 +42,7 @@ void BiallelicUniqueKmers::insert_kmer(unsigned short readcount,  vector<unsigne
 		if ((a != 1) && (a != 0)) {
 			throw runtime_error("BiallelicUniqueKmers::insert_kmer: provided alleles need to be either 0 or 1 (biallelic)");
 		}
+		this->alleles[a].is_present = true;
 		this->alleles[a].kmer_path.set_position(index);
 	}
 	current_index += 1;
@@ -56,7 +57,7 @@ bool BiallelicUniqueKmers::kmer_on_path(size_t kmer_index, size_t path_index) co
 	// check if kmer_index is valid and look up position
 	if (kmer_index < this->current_index) {
 		bool allele_id = this->path_to_allele.at(path_index);
-		return (this->alleles.at(allele_id).kmer_path.get_position(kmer_index) > 0);
+		return (this->alleles[allele_id].kmer_path.get_position(kmer_index) > 0);
 	} else {
 		throw runtime_error("BiallelicUniqueKmers::kmer_on_path: requested kmer index: " + to_string(kmer_index) + " does not exist.");
 	}
@@ -64,7 +65,10 @@ bool BiallelicUniqueKmers::kmer_on_path(size_t kmer_index, size_t path_index) co
 
 
 bool BiallelicUniqueKmers::kmer_on_allele(size_t kmer_index, size_t allele_id) const {
-	return this->alleles.at(allele_id).kmer_path.get_position(kmer_index);
+	if ((allele_id >= this->alleles.size()) || !this->alleles[allele_id].is_present) {
+		throw out_of_range("BiallelicUniqueKmers::kmer_on_allele: allele does not exist.");
+	}
+	return this->alleles[allele_id].kmer_path.get_position(kmer_index);
 }
 
 
@@ -112,15 +116,17 @@ void BiallelicUniqueKmers::get_path_ids(vector<unsigned short>& p, vector<unsign
 }
 
 void BiallelicUniqueKmers::get_allele_ids(vector<unsigned short>& a) {
-	for (auto it = this->alleles.begin(); it != this->alleles.end(); ++it) {
-		a.push_back(it->first);
+	for (size_t allele_id = 0; allele_id < this->alleles.size(); ++allele_id) {
+		if (this->alleles[allele_id].is_present) a.push_back(allele_id);
 	}
 }
 
 
 void BiallelicUniqueKmers::get_defined_allele_ids(std::vector<unsigned short>& a) {
-	for (auto it = this->alleles.begin(); it != this->alleles.end(); ++it) {
-		if (!it->second.is_undefined) a.push_back(it->first);
+	for (size_t allele_id = 0; allele_id < this->alleles.size(); ++allele_id) {
+		if (this->alleles[allele_id].is_present && !this->alleles[allele_id].is_undefined) {
+			a.push_back(allele_id);
+		}
 	}
 }
 
@@ -131,13 +137,14 @@ ostream& operator<< (ostream& stream, const BiallelicUniqueKmers& uk) {
 		stream << i << ": " << uk.kmer_to_count[i] << endl;
 	}
 	stream << "alleles:" << endl;
-	for (auto it = uk.alleles.begin(); it != uk.alleles.end(); ++it) {
-		stream << (unsigned int) it->first << "\t" << it->second.kmer_path.convert_to_string() << endl;
+	for (size_t allele_id = 0; allele_id < uk.alleles.size(); ++allele_id) {
+		if (!uk.alleles[allele_id].is_present) continue;
+		stream << allele_id << "\t" << uk.alleles[allele_id].kmer_path.convert_to_string() << endl;
 	}
 
 	stream << "undefined alleles:" << endl;
-	for (auto it = uk.alleles.begin(); it != uk.alleles.end(); ++it) {
-		if (uk.is_undefined_allele(it->first)) stream << (unsigned int) it->first << endl;
+	for (size_t allele_id = 0; allele_id < uk.alleles.size(); ++allele_id) {
+		if (uk.alleles[allele_id].is_present && uk.is_undefined_allele(allele_id)) stream << allele_id << endl;
 	}
 
 	stream << "paths:" << endl;
@@ -152,8 +159,10 @@ ostream& operator<< (ostream& stream, const BiallelicUniqueKmers& uk) {
 
 map<unsigned short, int> BiallelicUniqueKmers::kmers_on_alleles () const {
 	map<unsigned short, int> result;
-	for (auto it = this->alleles.begin(); it != this->alleles.end(); ++it) {
-		result[it->first] = alleles.at(it->first).kmer_path.nr_kmers();
+	for (size_t allele_id = 0; allele_id < this->alleles.size(); ++allele_id) {
+		if (this->alleles[allele_id].is_present) {
+			result[allele_id] = this->alleles[allele_id].kmer_path.nr_kmers();
+		}
 	}
 	return result;
 }
@@ -163,7 +172,10 @@ unsigned short BiallelicUniqueKmers::kmers_on_allele(unsigned short allele_id) c
 	if ((allele_id != 1) && (allele_id != 0) ) {
 		throw runtime_error("BiallelicUniqueKmers::kmers_on_allele: allele_id must be either 0 or 1.");
 	}
-	return alleles.at(allele_id).kmer_path.nr_kmers();
+	if (!alleles[allele_id].is_present) {
+		throw out_of_range("BiallelicUniqueKmers::kmers_on_allele: allele does not exist.");
+	}
+	return alleles[allele_id].kmer_path.nr_kmers();
 }
 
 
@@ -171,10 +183,13 @@ unsigned short BiallelicUniqueKmers::present_kmers_on_allele(unsigned short alle
 	if ((allele_id != 1) && (allele_id != 0) ) {
 		throw runtime_error("BiallelicUniqueKmers::present_kmers_on_allele: allele_id must be either 0 or 1.");
 	}
+	if (!alleles[allele_id].is_present) {
+		throw out_of_range("BiallelicUniqueKmers::present_kmers_on_allele: allele does not exist.");
+	}
 	unsigned short result = 0;
 	for (size_t i = 0; i < this->kmer_to_count.size(); ++i) {
 		if (kmer_to_count[i] < 3) continue;
-		if (alleles.at(allele_id).kmer_path.get_position(i) > 0) result += 1;
+		if (alleles[allele_id].kmer_path.get_position(i) > 0) result += 1;
 	}
 	return result;
 }
@@ -193,20 +208,14 @@ bool BiallelicUniqueKmers::is_undefined_allele (unsigned short allele_id) const 
 		throw runtime_error("BiallelicUniqueKmers::is_undefined_allele: allele_id must be either 0 or 1.");
 	}
 	// check if allele id exists
-	auto it = this->alleles.find(allele_id);
-	if (it != this->alleles.end()) {
-		return it->second.is_undefined;
-	} else {
-		return false;
-	}
+	return (allele_id < this->alleles.size()) && this->alleles[allele_id].is_present && this->alleles[allele_id].is_undefined;
 }
 
 void BiallelicUniqueKmers::set_undefined_allele (unsigned short allele_id) {
 	if ((allele_id != 1) && (allele_id != 0) ) {
 		throw runtime_error("BiallelicUniqueKmers::set_undefined_allele: allele_id " + to_string(allele_id) + " does not exist.");
 	}
-	auto it = this->alleles.find(allele_id);
-	if (it == this->alleles.end()) {
+	if ((allele_id >= this->alleles.size()) || !this->alleles[allele_id].is_present) {
 		throw runtime_error("BiallelicUniqueKmers::set_undefined_allele: allele_id " + to_string(allele_id) + " does not exist.");
 	}
 	this->alleles[allele_id].is_undefined = true;
@@ -243,9 +252,9 @@ void BiallelicUniqueKmers::update_paths(vector<unsigned short>& path_ids) {
 		if (it->second.is_undefined) undefined_alleles.push_back(it->first);
 	}
 	this->path_to_allele = updated_path_to_allele;
-	this->alleles.clear();
+	this->alleles = {};
 	for (auto a : updated_path_to_allele) {
-		this->alleles[a] = AlleleInfo16();
+		this->alleles[a].is_present = true;
 	}
 
 	vector<unsigned short> old_counts = this->kmer_to_count;
@@ -260,7 +269,7 @@ void BiallelicUniqueKmers::update_paths(vector<unsigned short>& path_ids) {
 }
 
 void BiallelicUniqueKmers::print_kmer_matrix(string chromosome) const {
-	for (auto a : this->alleles) {
-		cout << chromosome << "\t" << this->variant_pos << "\t" << a.second.kmer_path << endl;
+	for (const auto& allele : this->alleles) {
+		if (allele.is_present) cout << chromosome << "\t" << this->variant_pos << "\t" << allele.kmer_path << endl;
 	}
 }

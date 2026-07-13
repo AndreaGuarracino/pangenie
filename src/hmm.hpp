@@ -54,12 +54,13 @@ public:
 
 
 private:
-	ColumnIndexer* column_indexer;
+	ColumnIndexer* column_indexer = nullptr;
 	std::vector<HMMColumn*> forward_columns;
-	HMMColumn* previous_backward_column;
+	HMMColumn* previous_backward_column = nullptr;
+	std::vector<HMMColumn*> column_pool;
 	std::vector< HMMColumn* > viterbi_columns;
-	std::vector<std::shared_ptr<UniqueKmers>>* unique_kmers;
-	ProbabilityTable* probabilities;
+	std::vector<std::shared_ptr<UniqueKmers>>* unique_kmers = nullptr;
+	ProbabilityTable* probabilities = nullptr;
 	std::vector< std::vector<size_t>* > viterbi_backtrace_columns;
 	std::vector< GenotypingResult > genotyping_result;
 	double recombrate;
@@ -71,6 +72,9 @@ private:
 	void compute_forward_column(size_t column_index);
 	void compute_backward_column(size_t column_index);
 	void compute_viterbi_column(size_t column_index);
+	HMMColumn* acquire_column();
+	void release_column(HMMColumn*& column);
+	void clear_column_pool();
 	friend cereal::access;
 
 	template<class T>

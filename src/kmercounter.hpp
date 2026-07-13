@@ -4,12 +4,19 @@
 #include <map>
 #include <vector>
 #include <string>
+#include <string_view>
+#include <span>
+#include <stdexcept>
 #include <jellyfish/mer_dna.hpp>
 
 class KmerCounter {
 public:
 	/** get the abundance of given kmer (string) **/
-	virtual size_t getKmerAbundance(std::string kmer) = 0;
+	virtual size_t getKmerAbundance(std::string_view kmer) = 0;
+	virtual void getKmerAbundances(std::span<const std::string_view> kmers, std::span<size_t> counts) {
+		if (kmers.size() != counts.size()) throw std::invalid_argument("KmerCounter::getKmerAbundances: size mismatch.");
+		for (size_t i = 0; i < kmers.size(); ++i) counts[i] = getKmerAbundance(kmers[i]);
+	}
 
 	/** get the abundance of given kmer (jellyfish kmer) **/
 	virtual size_t getKmerAbundance(jellyfish::mer_dna jelly_kmer) = 0;

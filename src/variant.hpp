@@ -57,6 +57,8 @@ public:
 	size_t nr_of_paths() const;
 	/** return allele sequence as string **/
 	std::string get_allele_string(size_t index) const;
+	/** return allele sequence without the graph flanks, without mutating this variant **/
+	std::string get_allele_string_without_flanks(size_t index) const;
 	/** return allele sequence as DnaSequence **/
 	DnaSequence get_allele_sequence(size_t index) const;
 	/** get start position of the variant **/

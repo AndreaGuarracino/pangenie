@@ -1,6 +1,7 @@
 #ifndef BIALLELICUNIQUEKMERS_HPP
 #define BIALLELICUNIQUEKMERS_HPP
 
+#include <array>
 #include <vector>
 #include <string>
 #include <map>
@@ -21,13 +22,12 @@
 
 
 struct AlleleInfo16 {
-	AlleleInfo16() {
-		kmer_path = KmerPath16();
-		is_undefined = false;
-	}
+	AlleleInfo16() : is_undefined(false), is_present(false) {}
 
 	KmerPath16 kmer_path;
 	bool is_undefined;
+	// Presence used by the in-memory dense representation; not serialized.
+	bool is_present;
 
 	template <class Archive>
 	void save(Archive& ar) const {
@@ -37,6 +37,7 @@ struct AlleleInfo16 {
 	template <class Archive>
 	void load(Archive& ar) {
 		ar(kmer_path, is_undefined);
+		is_present = true;
 	}
 };
 
@@ -99,8 +100,25 @@ public:
 	void print_kmer_matrix(std::string chromosome) const;
 
 	template<class Archive>
-	void serialize(Archive& archive) {
-		archive(variant_pos, local_coverage, current_index, kmer_to_count, alleles, path_to_allele);
+	void save(Archive& archive) const {
+		std::map<bool, AlleleInfo16> serialized_alleles;
+		for (size_t allele_id = 0; allele_id < alleles.size(); ++allele_id) {
+			if (alleles[allele_id].is_present) {
+				serialized_alleles.emplace(static_cast<bool>(allele_id), alleles[allele_id]);
+			}
+		}
+		archive(variant_pos, local_coverage, current_index, kmer_to_count, serialized_alleles, path_to_allele);
+	}
+
+	template<class Archive>
+	void load(Archive& archive) {
+		std::map<bool, AlleleInfo16> serialized_alleles;
+		archive(variant_pos, local_coverage, current_index, kmer_to_count, serialized_alleles, path_to_allele);
+		alleles = {};
+		for (const auto& entry : serialized_alleles) {
+			alleles[entry.first] = entry.second;
+			alleles[entry.first].is_present = true;
+		}
 	}
 
 private:
@@ -108,8 +126,8 @@ private:
 	float local_coverage;
 	size_t current_index;
 	std::vector<unsigned short> kmer_to_count;
-	// stores kmers of each allele and whether the allele is undefined
-	std::map<bool, AlleleInfo16> alleles;
+	// Biallelic IDs are exactly 0 and 1; is_present distinguishes missing IDs.
+	std::array<AlleleInfo16, 2> alleles;
 	// defines which alleles are carried by each path (=index)
 	std::vector<bool> path_to_allele;
 //	friend class HaplotypeSampler;

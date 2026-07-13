@@ -1,6 +1,7 @@
 #include "jellyfishreader.hpp"
 #include <iostream>
 #include <fstream>
+#include <memory>
 #include <stdexcept>
 #include <math.h>
 #include <fstream>
@@ -40,10 +41,39 @@ JellyfishReader::JellyfishReader (string readfile, size_t kmersize)
 	}
 }
 
-size_t JellyfishReader::getKmerAbundance(string kmer){
-	jellyfish::mer_dna jelly_kmer(kmer);
-	jelly_kmer.canonicalize();
-	return this->db->check(jelly_kmer);
+size_t JellyfishReader::getKmerAbundance(string_view kmer){
+	if (kmer.size() < jellyfish::mer_dna::k()) {
+		jellyfish::mer_dna invalid{string(kmer)};
+		(void)invalid;
+	}
+	thread_local unsigned int scratch_k = 0;
+	thread_local unique_ptr<jellyfish::mer_dna> scratch;
+	if (!scratch || scratch_k != jellyfish::mer_dna::k()) {
+		scratch = make_unique<jellyfish::mer_dna>();
+		scratch_k = jellyfish::mer_dna::k();
+	}
+	scratch->from_chars(kmer.begin());
+	scratch->canonicalize();
+	return this->db->check(*scratch);
+}
+
+void JellyfishReader::getKmerAbundances(span<const string_view> kmers, span<size_t> counts) {
+	if (kmers.size() != counts.size()) throw invalid_argument("JellyfishReader::getKmerAbundances: size mismatch.");
+	thread_local unsigned int scratch_k = 0;
+	thread_local unique_ptr<jellyfish::mer_dna> scratch;
+	if (!scratch || scratch_k != jellyfish::mer_dna::k()) {
+		scratch = make_unique<jellyfish::mer_dna>();
+		scratch_k = jellyfish::mer_dna::k();
+	}
+	for (size_t i = 0; i < kmers.size(); ++i) {
+		if (kmers[i].size() < jellyfish::mer_dna::k()) {
+			jellyfish::mer_dna invalid{string(kmers[i])};
+			(void)invalid;
+		}
+		scratch->from_chars(kmers[i].begin());
+		scratch->canonicalize();
+		counts[i] = this->db->check(*scratch);
+	}
 }
 
 size_t JellyfishReader::getKmerAbundance(jellyfish::mer_dna jelly_kmer){
@@ -98,7 +128,7 @@ size_t JellyfishReader::computeHistogram(size_t max_count, bool largest_peak, st
 			ss << "JellyfishReader::computeHistogram: File " << filename << " cannot be created. Note that the filename must not contain non-existing directories." << endl;
 			throw runtime_error(ss.str());
 		}
-		histofile << "parameters\t" << kmer_coverage_estimate/2.0 << '\t' << kmer_coverage_estimate << endl;
+		histofile << "parameters\t" << kmer_coverage_estimate/2.0 << '\t' << kmer_coverage_estimate << '\n';
 		histofile.close();
 	}
 

@@ -14,11 +14,11 @@
 class DnaSequence {
 public:
 	DnaSequence();
-	DnaSequence(std::string& sequence);
+	DnaSequence(const std::string& sequence);
 	/** append string sequence to the end of DNA. **/
-	void append(std::string& sequence);
+	void append(const std::string& sequence);
 	/** append DnaSequence to the end of DNA **/
-	void append(DnaSequence sequence);
+	void append(const DnaSequence& sequence);
 	/** reverse sequence **/
 	void reverse();
 	/** compute reverse complement **/

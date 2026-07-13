@@ -9,6 +9,7 @@ public:
 	Histogram(size_t max_value);
 	Histogram(std::string filename, size_t max_value);
 	void add_value(size_t value);
+	void add_count(size_t value, size_t count);
 	void write_to_file(std::string filename) const;
 	void smooth_histogram();
 	void find_peaks(std::vector<size_t>& peak_ids, std::vector<size_t>& peak_values) const;

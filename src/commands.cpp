@@ -84,17 +84,28 @@ struct Results {
 };
 
 
-void fill_read_kmercounts(string chromosome, UniqueKmersMap* unique_kmers_map, shared_ptr<KmerCounter> read_kmer_counts, ProbabilityTable* probabilities, string outname, size_t kmer_coverage, size_t panel_size, double recombrate, double effective_N, bool add_reference, string output_paths, unsigned short allele_penalty) {
+void fill_read_kmercounts(string chromosome, UniqueKmersMap* unique_kmers_map, shared_ptr<KmerCounter> read_kmer_counts, string outname, size_t kmer_coverage, size_t panel_size, double recombrate, double effective_N, bool add_reference, string output_paths, unsigned short allele_penalty) {
 	Timer timer;
 	string filename = outname + "_" + chromosome + "_kmers.tsv.gz";
 	gzFile file = gzopen(filename.c_str(), "rb");
 	if (!file) {
 		throw runtime_error("fill_read_kmercounts: kmer file cannot be opened.");
 	}
+	gzbuffer(file, 1 << 20);
 
-	const int buffer_size = 1024;
+	const int buffer_size = 64 * 1024;
 	char buffer[buffer_size];
 	string line;
+	line.reserve(16 * 1024);
+	vector<string_view> kmers;
+	vector<string_view> flanking_kmers;
+	vector<string_view> queried_kmers;
+	vector<size_t> queried_counts;
+	kmers.reserve(512);
+	flanking_kmers.reserve(24);
+	queried_kmers.reserve(536);
+	queried_counts.reserve(536);
+	auto& chromosome_kmers = unique_kmers_map->unique_kmers.at(chromosome);
 	size_t var_index = 0;
     while (gzgets(file, buffer, buffer_size) != nullptr) {
         line += buffer;
@@ -104,52 +115,44 @@ void fill_read_kmercounts(string chromosome, UniqueKmersMap* unique_kmers_map, s
             line.pop_back();
 
 			// read kmer information from file
-			vector<string> kmers;
-			vector<string> flanking_kmers;
-			bool is_header = false;
-			string chrom;
+				kmers.clear();
+				flanking_kmers.clear();
+				bool is_header = false;
+				string_view chrom;
 			size_t start;
 			parse_kmer_line(line, chrom, start, kmers, flanking_kmers, is_header);
 
-			// clear string for next line
-            line.clear();
-
-			if (is_header) continue; // header line
+			if (is_header) {
+				line.clear();
+				continue;
+			}
 			assert(chrom == chromosome);
-			assert(start == unique_kmers_map->unique_kmers[chromosome][var_index]->get_variant_position());
-			unsigned short max_alleles = unique_kmers_map->unique_kmers[chromosome][var_index]->get_nr_paths();
+			assert(var_index < chromosome_kmers.size());
+			auto& variant_kmers = chromosome_kmers[var_index];
+			assert(start == variant_kmers->get_variant_position());
+			unsigned short max_alleles = variant_kmers->get_nr_paths();
 			if (max_alleles < 301) max_alleles = 301;
 
-			{
-				size_t kmers_used = 0;
-				// add counts to UniqueKmers object
-				for (size_t i = 0; i < kmers.size(); ++i) {
-					assert (kmers_used < max_alleles);
+			assert(kmers.size() <= max_alleles);
+			queried_kmers.clear();
+			queried_kmers.insert(queried_kmers.end(), kmers.begin(), kmers.end());
+			queried_kmers.insert(queried_kmers.end(), flanking_kmers.begin(), flanking_kmers.end());
+			queried_counts.resize(queried_kmers.size());
+			read_kmer_counts->getKmerAbundances(queried_kmers, queried_counts);
 
-					size_t count = read_kmer_counts->getKmerAbundance(kmers[i]);
-
-					// determine probabilities
-					CopyNumber cn = probabilities->get_probability(kmer_coverage, count);
-					double p_cn0 = cn.get_probability_of(0);
-					double p_cn1 = cn.get_probability_of(1);
-					double p_cn2 = cn.get_probability_of(2);
-
-					if (!(p_cn0 > 0.0 || p_cn1 > 0.0 || p_cn2 > 0.0)) cerr << "Warining: only zero probabilities for " << kmers[i] << " at " << chrom << " " << start << endl; 
-
-					kmers_used += 1;
-//					lock_guard<mutex> lock_kmers (unique_kmers_map->kmers_mutex);
-					unique_kmers_map->unique_kmers[chromosome][var_index]->update_readcount(i, count);
-				}
+			// add counts to UniqueKmers object
+			for (size_t i = 0; i < kmers.size(); ++i) {
+				variant_kmers->update_readcount(i, queried_counts[i]);
 			}
 
 			// determine local kmer coverage
-			unsigned short local_coverage = compute_local_coverage(flanking_kmers, read_kmer_counts, kmer_coverage);
+			unsigned short local_coverage = compute_local_coverage(span<const size_t>(queried_counts).subspan(kmers.size()), kmer_coverage);
 
-//			lock_guard<mutex> lock_kmers (unique_kmers_map->kmers_mutex);
-			unique_kmers_map->unique_kmers[chromosome][var_index]->set_coverage(local_coverage);
+			variant_kmers->set_coverage(local_coverage);
 			var_index += 1;
-        }
-    }
+			line.clear();
+	        }
+	    }
 	gzclose(file);
 
 	// store runtime
@@ -378,11 +381,11 @@ int run_single_command(string precomputed_prefix, string readfile, string reffil
 				// create thread pool with at most nr_chromosome threads
 				ThreadPool threadPool (nr_cores_uk);
 				for (auto chromosome : chromosomes) {
-					shared_ptr<Graph> graph_segment = graph.at(chromosome);
-					UniqueKmersMap* result = &unique_kmers_list;
-					KmerCounter* genomic_counts = &genomic_kmer_counts;
-					ProbabilityTable* probs = &probabilities;
-					string output_paths = "";
+						shared_ptr<Graph> graph_segment = graph.at(chromosome);
+						UniqueKmersMap* result = &unique_kmers_list;
+						KmerCounter* genomic_counts = &genomic_kmer_counts;
+						ProbabilityTable* probs = &probabilities;
+						string output_paths = "";
 					if (output_panel) output_paths = outname + "_paths_" + chromosome + ".tsv";
 					function<void()> f_unique_kmers = bind(prepare_unique_kmers, chromosome, genomic_counts, read_kmer_counts, graph_segment, probs, result, kmer_abundance_peak, panel_size, recombrate, sampling_effective_N, add_reference, output_paths, allele_penalty);
 					threadPool.submit(f_unique_kmers);
@@ -942,13 +945,12 @@ int run_genotype_command(string precomputed_prefix, string readfile, string outn
 			}
 			
 			{
-				ThreadPool threadPool (nr_cores_uk);
-				for (auto chromosome : chromosomes) {
-					UniqueKmersMap* unique_kmers = &unique_kmers_list;
-					ProbabilityTable* probs = &probabilities;
-					string output_paths = "";
-					if (output_panel) output_paths = outname + "_paths_" + chromosome + ".tsv";
-					function<void()> f_fill_readkmers = bind(fill_read_kmercounts, chromosome, unique_kmers, read_kmer_counts, probs, precomputed_prefix, kmer_abundance_peak, panel_size, recombrate, sampling_effective_N, unique_kmers_list.add_reference, output_paths, allele_penalty);
+					ThreadPool threadPool (nr_cores_uk);
+					for (auto chromosome : chromosomes) {
+						UniqueKmersMap* unique_kmers = &unique_kmers_list;
+						string output_paths = "";
+						if (output_panel) output_paths = outname + "_paths_" + chromosome + ".tsv";
+						function<void()> f_fill_readkmers = bind(fill_read_kmercounts, chromosome, unique_kmers, read_kmer_counts, precomputed_prefix, kmer_abundance_peak, panel_size, recombrate, sampling_effective_N, unique_kmers_list.add_reference, output_paths, allele_penalty);
 					threadPool.submit(f_fill_readkmers);
 				}
 			}
@@ -1412,13 +1414,12 @@ int run_sampling(string precomputed_prefix, string readfile, string outname, siz
 			}
 			
 			{
-				ThreadPool threadPool (nr_cores_uk);
-				for (auto chromosome : chromosomes) {
-					UniqueKmersMap* unique_kmers = &unique_kmers_list;
-					ProbabilityTable* probs = &probabilities;
-					string output_paths = outname + "_paths_" + chromosome + ".tsv";
+					ThreadPool threadPool (nr_cores_uk);
+					for (auto chromosome : chromosomes) {
+						UniqueKmersMap* unique_kmers = &unique_kmers_list;
+						string output_paths = outname + "_paths_" + chromosome + ".tsv";
 
-					function<void()> f_fill_readkmers = bind(fill_read_kmercounts, chromosome, unique_kmers, read_kmer_counts, probs, precomputed_prefix, kmer_abundance_peak, panel_size, recombrate, sampling_effective_N, unique_kmers_list.add_reference, output_paths, allele_penalty);
+						function<void()> f_fill_readkmers = bind(fill_read_kmercounts, chromosome, unique_kmers, read_kmer_counts, precomputed_prefix, kmer_abundance_peak, panel_size, recombrate, sampling_effective_N, unique_kmers_list.add_reference, output_paths, allele_penalty);
 					threadPool.submit(f_fill_readkmers);
 				}
 			}
