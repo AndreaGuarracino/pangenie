@@ -1,12 +1,41 @@
 #include "jellyfishcounter.hpp"
 #include <iostream>
 #include <fstream>
+#include <memory>
 #include <stdexcept>
+#include <thread>
+#include <filesystem>
+#include <limits>
 #include <math.h>
 #include <fstream>
 #include "histogram.hpp"
 
 using namespace std;
+
+namespace {
+
+constexpr uint64_t default_hash_size = 3000000000ULL;
+constexpr uint64_t minimum_auto_hash_size = 1ULL << 20;
+
+uint64_t auto_hash_size(const vector<string>& filenames) {
+	uint64_t bytes = 0;
+	for (const auto& filename : filenames) {
+		if (filename == "-" || filename == "/dev/stdin") return default_hash_size;
+		error_code ec;
+		const auto size = filesystem::file_size(filename, ec);
+		if (ec || size > numeric_limits<uint64_t>::max() - bytes) return default_hash_size;
+		bytes += size;
+	}
+	// Every distinct k-mer needs at least one input byte. Jellyfish rounds this
+	// value up to a power of two and can still grow if the estimate is exceeded.
+	return max(minimum_auto_hash_size, min(bytes, default_hash_size));
+}
+
+uint64_t resolve_hash_size(uint64_t requested, const vector<string>& sizing_files) {
+	return requested == 0 ? auto_hash_size(sizing_files) : requested;
+}
+
+}
 
 vector<char*> to_args(string readfile) {
 	vector<char*> args;
@@ -24,9 +53,10 @@ vector<char*> to_args(string readfile) {
 
 
 JellyfishCounter::JellyfishCounter (string readfile, size_t kmer_size, size_t nr_threads, uint64_t hash)
+	: nr_threads(nr_threads)
 {
 	jellyfish::mer_dna::k(kmer_size); // Set length of mers
-	const uint64_t hash_size    = hash; // Initial size of hash, default = 3000000000.
+	const uint64_t hash_size    = resolve_hash_size(hash, {readfile});
 	const uint32_t num_reprobes = 126;
 	const uint32_t num_threads  = nr_threads; // Number of concurrent threads
 	const uint32_t counter_len  = 7;  // Minimum length of counting field
@@ -34,6 +64,8 @@ JellyfishCounter::JellyfishCounter (string readfile, size_t kmer_size, size_t nr
 
 	// create the hash
 	this->jellyfish_hash = new mer_hash_type(hash_size, jellyfish::mer_dna::k()*2, counter_len, num_threads, num_reprobes);
+	cerr << "Jellyfish hash request: " << hash_size
+	     << ", allocated slots: " << this->jellyfish_hash->size() << '\n';
 
 	// convert the readfile to char**
 	vector<char*> args = to_args(readfile);
@@ -49,9 +81,10 @@ JellyfishCounter::JellyfishCounter (string readfile, size_t kmer_size, size_t nr
 }
 
 JellyfishCounter::JellyfishCounter (string readfile, vector<string> kmerfiles, size_t kmer_size, size_t nr_threads, uint64_t hash)
+	: nr_threads(nr_threads)
 {
 	jellyfish::mer_dna::k(kmer_size); // Set length of mers
-	const uint64_t hash_size    = hash; // Initial size of hash.
+	const uint64_t hash_size    = resolve_hash_size(hash, kmerfiles);
 	const uint32_t num_reprobes = 126;
 	const uint32_t num_threads  = nr_threads; // Number of concurrent threads
 	const uint32_t counter_len  = 7;  // Minimum length of counting field
@@ -59,6 +92,8 @@ JellyfishCounter::JellyfishCounter (string readfile, vector<string> kmerfiles, s
 
 	// create the hash
 	this->jellyfish_hash = new mer_hash_type(hash_size, jellyfish::mer_dna::k()*2, counter_len, num_threads, num_reprobes);
+	cerr << "Jellyfish hash request: " << hash_size
+	     << ", allocated slots: " << this->jellyfish_hash->size() << '\n';
 
 	// convert the filenames to char**
 	vector<char*> reads_args = to_args(readfile);
@@ -84,14 +119,46 @@ JellyfishCounter::JellyfishCounter (string readfile, vector<string> kmerfiles, s
 
 }
 
-size_t JellyfishCounter::getKmerAbundance(string kmer){
-
-	jellyfish::mer_dna jelly_kmer(kmer);
-	jelly_kmer.canonicalize();
+size_t JellyfishCounter::getKmerAbundance(string_view kmer){
+	if (kmer.size() < jellyfish::mer_dna::k()) {
+		// Preserve Jellyfish's exception for undersized keys off the hot path.
+		jellyfish::mer_dna invalid{string(kmer)};
+		(void)invalid;
+	}
+	thread_local unsigned int scratch_k = 0;
+	thread_local unique_ptr<jellyfish::mer_dna> scratch;
+	if (!scratch || scratch_k != jellyfish::mer_dna::k()) {
+		scratch = make_unique<jellyfish::mer_dna>();
+		scratch_k = jellyfish::mer_dna::k();
+	}
+	scratch->from_chars(kmer.begin());
+	scratch->canonicalize();
 	uint64_t val = 0;
 	const auto jf_ary = this->jellyfish_hash->ary();
-	jf_ary->get_val_for_key(jelly_kmer, &val);
+	jf_ary->get_val_for_key(*scratch, &val);
 	return val;
+}
+
+void JellyfishCounter::getKmerAbundances(span<const string_view> kmers, span<size_t> counts) {
+	if (kmers.size() != counts.size()) throw invalid_argument("JellyfishCounter::getKmerAbundances: size mismatch.");
+	thread_local unsigned int scratch_k = 0;
+	thread_local unique_ptr<jellyfish::mer_dna> scratch;
+	if (!scratch || scratch_k != jellyfish::mer_dna::k()) {
+		scratch = make_unique<jellyfish::mer_dna>();
+		scratch_k = jellyfish::mer_dna::k();
+	}
+	const auto jf_ary = this->jellyfish_hash->ary();
+	for (size_t i = 0; i < kmers.size(); ++i) {
+		if (kmers[i].size() < jellyfish::mer_dna::k()) {
+			jellyfish::mer_dna invalid{string(kmers[i])};
+			(void)invalid;
+		}
+		scratch->from_chars(kmers[i].begin());
+		scratch->canonicalize();
+		uint64_t value = 0;
+		jf_ary->get_val_for_key(*scratch, &value);
+		counts[i] = value;
+	}
 }
 
 size_t JellyfishCounter::getKmerAbundance(jellyfish::mer_dna jelly_kmer){
@@ -119,10 +186,25 @@ size_t JellyfishCounter::computeKmerCoverage(size_t genome_kmers) {
 size_t JellyfishCounter::computeHistogram(size_t max_count, bool largest_peak, string filename) {
 	Histogram histogram(max_count);
 	const auto jf_ary = this->jellyfish_hash->ary();
-	const auto end = jf_ary->end();
-	for (auto it = jf_ary->begin(); it != end; ++it) {
-		auto& key_val = *it;
-		if (key_val.second > 0) histogram.add_value(key_val.second);
+	const size_t worker_count = max<size_t>(1, this->nr_threads);
+	vector<vector<size_t>> partial_histograms(worker_count, vector<size_t>(max_count + 1, 0));
+	vector<thread> workers;
+	workers.reserve(worker_count);
+	for (size_t worker_id = 0; worker_id < worker_count; ++worker_id) {
+		workers.emplace_back([jf_ary, worker_id, worker_count, max_count, &partial_histograms]() {
+			auto slice = jf_ary->region_slice(worker_id, worker_count);
+			auto& bins = partial_histograms[worker_id];
+			while (slice.next()) {
+				size_t value = slice.val();
+				if ((value > 0) && (value <= max_count)) ++bins[value];
+			}
+		});
+	}
+	for (auto& worker : workers) worker.join();
+	for (size_t value = 1; value <= max_count; ++value) {
+		size_t count = 0;
+		for (const auto& bins : partial_histograms) count += bins[value];
+		histogram.add_count(value, count);
 	}
 	// write histogram values to file
 	if (filename != "") {
@@ -146,7 +228,7 @@ size_t JellyfishCounter::computeHistogram(size_t max_count, bool largest_peak, s
 			ss << "JellyfishCounter::computeHistogram: File " << filename << " cannot be created. Note that the filename must not contain non-existing directories." << endl;
 			throw runtime_error(ss.str());
 		}
-		histofile << "parameters\t" << kmer_coverage_estimate/2.0 << '\t' << kmer_coverage_estimate << endl;
+		histofile << "parameters\t" << kmer_coverage_estimate/2.0 << '\t' << kmer_coverage_estimate << '\n';
 		histofile.close();
 	}
 	return kmer_coverage_estimate;

@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
 	size_t nr_core_threads = 1;
 	double regularization = 0.01;
 	bool count_only_graph = true;
-	uint64_t hash_size = 3000000000;
+	uint64_t hash_size = 0;
 	size_t panel_size = 0;
 	double recombrate = 1.26;
 	// TOD0: for testing purposes
@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) {
 	argument_parser.add_optional_argument('j', "1", "number of threads to use for kmer-counting");
 	argument_parser.add_optional_argument('t', "1", "number of threads to use for core algorithm. Largest number of threads possible is the number of chromosomes given in the VCF");
 	argument_parser.add_flag_argument('c', "count all read kmers instead of only those located in graph");
-	argument_parser.add_optional_argument('e', "3000000000", "size of hash used by jellyfish");
+	argument_parser.add_optional_argument('e', "0", "initial size of hash used by jellyfish (0: auto-size from input)");
 	argument_parser.add_optional_argument('x', "0", "to which size the input panel shall be reduced.");
 	argument_parser.add_optional_argument('y', "5", "Penality used for already selected alleles in sampling step.");
 	argument_parser.add_optional_argument('b', "0.01", "effective population size for sampling step.");

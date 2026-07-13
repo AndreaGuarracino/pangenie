@@ -178,6 +178,22 @@ string Variant::get_allele_string(size_t index) const {
 	}
 }
 
+string Variant::get_allele_string_without_flanks(size_t index) const {
+	if (index >= this->allele_combinations.size()) {
+		throw runtime_error("Variant::get_allele_string_without_flanks: Index out of bounds.");
+	}
+
+	DnaSequence result;
+	const size_t nr_alleles = this->allele_combinations.at(index).size();
+	for (size_t i = 0; i < nr_alleles; ++i) {
+		result.append(this->allele_sequences[i][this->allele_combinations[index][i]]);
+		if (i < (nr_alleles - 1)) {
+			result.append(this->inner_flanks[i]);
+		}
+	}
+	return result.to_string();
+}
+
 DnaSequence Variant::get_allele_sequence(size_t index) const {
 	if (index < this->allele_combinations.size()) {
 		DnaSequence result;

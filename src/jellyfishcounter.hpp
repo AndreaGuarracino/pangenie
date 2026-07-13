@@ -38,12 +38,12 @@ public:
 	bool canonical, OPERATION op)
 	: mer_hash_(mer_hash)
 	, streams_(file_begin, file_end)
-	, parser_(jellyfish::mer_dna::k(), streams_.nb_streams(), 3 * nb_threads, 4096, streams_)
+	, parser_(jellyfish::mer_dna::k(), streams_.nb_streams(), 3 * nb_threads, 64 * 1024, streams_)
 	, canonical_(canonical)
 	, op_(op)
 { }
 
-	virtual void start(int thid) {
+	virtual void start(int /*thid*/) {
 		mer_iterator_type mers(parser_, canonical_);
 
 		switch(op_) {
@@ -76,7 +76,7 @@ public:
 	* @param *params parameters for GATB-Kmercounter
 	* @param name of the output file
 	**/
-	JellyfishCounter(std::string readfile, size_t kmer_size, size_t nr_threads = 1, uint64_t hash = 3000000000);
+	JellyfishCounter(std::string readfile, size_t kmer_size, size_t nr_threads = 1, uint64_t hash = 0);
 
 	/** 
 	* @param readfile name of the FASTQ-files containing reads
@@ -84,15 +84,16 @@ public:
 	* @param *params parameters for GATB-Kmercounter
 	* @param name of the output file
 	**/
-	JellyfishCounter (std::string readfile, std::vector<std::string> kmerfiles, size_t kmer_size, size_t nr_threads = 1, uint64_t hash = 3000000000);
+	JellyfishCounter (std::string readfile, std::vector<std::string> kmerfiles, size_t kmer_size, size_t nr_threads = 1, uint64_t hash = 0);
 
 	~JellyfishCounter();
 	
 	/** get the abundance of given kmer (string) **/
-	size_t getKmerAbundance(std::string kmer);
+	size_t getKmerAbundance(std::string_view kmer) override;
+	void getKmerAbundances(std::span<const std::string_view> kmers, std::span<size_t> counts) override;
 
 	/** get the abundance of given kmer (jellyfish kmer) **/
-	size_t getKmerAbundance(jellyfish::mer_dna jelly_kmer);
+	size_t getKmerAbundance(jellyfish::mer_dna jelly_kmer) override;
 
 	/** compute the kmer coverage relative to the number of kmers in the genome **/
 	size_t computeKmerCoverage(size_t genome_kmers);
@@ -102,5 +103,6 @@ public:
 
 private:
 	mer_hash_type* jellyfish_hash;
+	size_t nr_threads;
 };
 #endif // JELLYFISHCOUNTER_HPP

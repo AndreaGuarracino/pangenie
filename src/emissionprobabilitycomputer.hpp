@@ -21,12 +21,15 @@ public:
 	/**
 	* @param uniquekmers all unique kmers for this position
 	 **/
-	EmissionProbabilityComputer(std::shared_ptr<UniqueKmers> uniquekmers, ProbabilityTable* probabilities);
+	EmissionProbabilityComputer(const std::shared_ptr<UniqueKmers>& uniquekmers, ProbabilityTable* probabilities);
 	/** get emission probability for a state in the HMM **/
-	double get_emission_probability(unsigned short allele_id1, unsigned short allele_id2) const;
+	double get_emission_probability(unsigned short allele_id1, unsigned short allele_id2) const noexcept {
+		if (this->all_zeros) return 1.0;
+		return this->state_to_prob[(size_t)allele_id1 * ((size_t)this->max_allele + 1) + allele_id2];
+	}
 
 private:
-	std::shared_ptr<UniqueKmers> uniquekmers;
+	UniqueKmers* uniquekmers;
 	ProbabilityTable* probabilities;
 	bool all_zeros;
 	unsigned short max_allele;

@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
 	bool count_only_graph = true;
 	bool ignore_imputed = false;
 	size_t sampling_size = 0;
-	uint64_t hash_size = 3000000000;
+	uint64_t hash_size = 0;
 	size_t panel_size = 0;
 	double recombrate = 1.26;
 	bool output_panel = false;
@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
 	argument_parser.add_flag_argument('c', "count all read kmers instead of only those located in graph");
 	argument_parser.add_flag_argument('u', "output genotype ./. for variants not covered by any unique kmers");
 	argument_parser.add_optional_argument('a', "0", "sample subsets of paths of this size");
-	argument_parser.add_optional_argument('e', "3000000000", "size of hash used by jellyfish");
+	argument_parser.add_optional_argument('e', "0", "initial size of hash used by jellyfish (0: auto-size from input)");
 	argument_parser.add_optional_argument('x', "0", "to which size the input panel shall be reduced.");
 	argument_parser.add_flag_argument('d', "write sampled panel to additional output VCF.");
 	argument_parser.add_optional_argument('y', "5", "Penality used for already selected alleles in sampling step.");

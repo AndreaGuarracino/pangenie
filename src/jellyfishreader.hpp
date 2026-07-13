@@ -66,10 +66,11 @@ public:
 	JellyfishReader(std::string readfile, size_t kmersize);
 	
 	/** get the abundance of given kmer (string) **/
-	size_t getKmerAbundance(std::string kmer);
+	size_t getKmerAbundance(std::string_view kmer) override;
+	void getKmerAbundances(std::span<const std::string_view> kmers, std::span<size_t> counts) override;
 
 	/** get the abundance of given kmer (jellyfish kmer) **/
-	size_t getKmerAbundance(jellyfish::mer_dna jelly_kmer);
+	size_t getKmerAbundance(jellyfish::mer_dna jelly_kmer) override;
 
 	/** compute the kmer coverage relative to the number of kmers in the genome **/
 	size_t computeKmerCoverage(size_t genome_kmers);

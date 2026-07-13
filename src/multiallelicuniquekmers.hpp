@@ -21,10 +21,7 @@
 
 
 struct AlleleInfo {
-	AlleleInfo() {
-		kmer_path = KmerPath();
-		is_undefined = false;
-	}
+	AlleleInfo() : is_undefined(false) {}
 
 	KmerPath kmer_path;
 	bool is_undefined;
@@ -98,8 +95,16 @@ public:
 	void print_kmer_matrix(std::string chromosome) const;
 
 	template<class Archive>
-	void serialize(Archive& archive) {
-		archive(variant_pos, local_coverage, current_index, kmer_to_count, alleles, path_to_allele);
+	void save(Archive& archive) const {
+		std::map<unsigned short, AlleleInfo> serialized_alleles(alleles.begin(), alleles.end());
+		archive(variant_pos, local_coverage, current_index, kmer_to_count, serialized_alleles, path_to_allele);
+	}
+
+	template<class Archive>
+	void load(Archive& archive) {
+		std::map<unsigned short, AlleleInfo> serialized_alleles;
+		archive(variant_pos, local_coverage, current_index, kmer_to_count, serialized_alleles, path_to_allele);
+		alleles.assign(serialized_alleles.begin(), serialized_alleles.end());
 	}
 
 private:
@@ -107,8 +112,8 @@ private:
 	float local_coverage;
 	size_t current_index;
 	std::vector<unsigned short> kmer_to_count;
-	// stores kmers of each allele and whether the allele is undefined
-	std::map<unsigned short, AlleleInfo> alleles;
+	// Usually only a few original allele IDs survive path sampling; keep them flat and sorted.
+	std::vector<std::pair<unsigned short, AlleleInfo>> alleles;
 	// defines which alleles are carried by each path (=index)
 	std::vector<unsigned short> path_to_allele;
 //	friend class HaplotypeSampler;

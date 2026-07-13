@@ -23,7 +23,7 @@ int main(int argc, char* argv[]) {
 	string outname = "result";
 	size_t nr_jellyfish_threads = 1;
 	bool add_reference = true;
-	uint64_t hash_size = 3000000000;
+	uint64_t hash_size = 0;
 
 	// parse the command line arguments
 	CommandLineParser argument_parser;
@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
 	argument_parser.add_mandatory_argument('o', "prefix of the output files. NOTE: the given path must not include non-existent folders");
 	argument_parser.add_optional_argument('k', "31", "kmer size");
 	argument_parser.add_optional_argument('t', "1", "number of threads to use for kmer-counting");
-	argument_parser.add_optional_argument('e', "3000000000", "size of hash used by jellyfish");
+	argument_parser.add_optional_argument('e', "0", "initial size of hash used by jellyfish (0: auto-size from input)");
 //	argument_parser.add_flag_argument('d', "do not add reference as additional path.");
 
 	try {

@@ -1,13 +1,14 @@
+#include <algorithm>
+#include <charconv>
 #include <sstream>
 #include <iostream>
 #include <iomanip>
 #include <math.h>
-#include <regex>
 #include "graphbuilder.hpp"
 
 using namespace std;
 
-void builder_parse_line(vector<DnaSequence>& result, string line, char sep) {
+void builder_parse_line(vector<DnaSequence>& result, const string& line, char sep) {
 	string token;
 	istringstream iss (line);
 	while (getline(iss, token, sep)) {
@@ -15,7 +16,7 @@ void builder_parse_line(vector<DnaSequence>& result, string line, char sep) {
 	}
 }
 
-void builder_parse_line(vector<string>& result, string line, char sep) {
+void builder_parse_line(vector<string>& result, const string& line, char sep) {
 	string token;
 	istringstream iss (line);
 	while (getline(iss, token, sep)) {
@@ -23,28 +24,21 @@ void builder_parse_line(vector<string>& result, string line, char sep) {
 	}
 }
 
-bool builder_matches_pattern(string& sequence, regex& r) {
-	size_t total_length = sequence.size();
-	string control = "";
-	auto begin = sequence.begin();
-	size_t length = 1000;
-	size_t letters_seen = 0;
-	while (begin + letters_seen != sequence.end()) {
-		size_t next_interval = min(length, total_length - letters_seen);
-		if (!regex_match(begin + letters_seen, begin + letters_seen + next_interval, r)) {
-			return false;
+bool builder_has_explicit_alleles(const string& sequence) {
+	return !sequence.empty() && all_of(sequence.begin(), sequence.end(), [](char base) {
+		switch (base) {
+			case 'A': case 'C': case 'G': case 'T':
+			case 'a': case 'c': case 'g': case 't':
+			case ',': return true;
+			default: return false;
 		}
-		control += string(begin + letters_seen, begin + letters_seen + next_interval);
-		letters_seen += next_interval;
-	}
-	assert(control == sequence);
-	return true;
+	});
 }
 
-void builder_parse_info_fields(vector<string>& result, string line) {
+void builder_parse_info_fields(vector<string>& result, const string& line) {
 	vector<string> fields;
 	builder_parse_line(fields, line, ';');
-	for (auto s : fields) {
+	for (const auto& s : fields) {
 		if (s.rfind("ID=", 0) == 0) {
 			// ID field present
 			builder_parse_line(result, s.substr (3), ',');
@@ -124,9 +118,11 @@ void GraphBuilder::construct_graph(std::string filename, FastaReader* fasta_read
 		// get chromosome
 		string current_chrom = tokens[0];
 		// get position
-		size_t current_start_pos;
-		stringstream sstream(tokens[1]);
-		sstream >> current_start_pos;
+		size_t current_start_pos = 0;
+		auto position_result = from_chars(tokens[1].data(), tokens[1].data() + tokens[1].size(), current_start_pos);
+		if (position_result.ec != errc() || position_result.ptr != tokens[1].data() + tokens[1].size() || current_start_pos == 0) {
+			throw runtime_error("GraphBuilder::GraphBuilder: invalid VCF position.");
+		}
 		// VCF positions are 1-based
 		current_start_pos -= 1;
 		// if variant is contained in previous one, skip it
@@ -153,8 +149,7 @@ void GraphBuilder::construct_graph(std::string filename, FastaReader* fasta_read
 		// get ALT alleles
 		vector<DnaSequence> alleles = {ref};
 		// make sure alt alleles are given explicitly
-		regex r("^[CAGTcagt,]+$");
-		if (!builder_matches_pattern(tokens[4], r)) {
+		if (!builder_has_explicit_alleles(tokens[4])) {
 			// skip this position
 			cerr << "GraphBuilder: skip variant at " << current_chrom << ":" << current_start_pos << " since alleles contain undefined nucleotides: " << tokens[4] << endl;
 			continue;
@@ -291,7 +286,9 @@ size_t GraphBuilder::nr_of_paths() const {
 }
 
 void GraphBuilder::write_path_segments(string filename, FastaReader* fasta_reader, map<string, shared_ptr<Graph>>& result) const {
+	vector<char> output_buffer(1 << 20);
 	ofstream outfile;
+	outfile.rdbuf()->pubsetbuf(output_buffer.data(), output_buffer.size());
 	outfile.open(filename);
 	if (!outfile.good()) {
 		stringstream ss;
@@ -307,7 +304,7 @@ void GraphBuilder::write_path_segments(string filename, FastaReader* fasta_reade
 	vector<string> all_chromosome_names = vcf_chromosomes;
 	fasta_reader->get_sequence_names(all_chromosome_names);
 
-	for (auto element : all_chromosome_names) {
+	for (const auto& element : all_chromosome_names) {
 		size_t prev_end = 0;
 		// check if chromosome was present in VCF and write allele sequences in this case
 		if (find(vcf_chromosomes.begin(), vcf_chromosomes.end(), element) != vcf_chromosomes.end()) {
@@ -320,33 +317,33 @@ void GraphBuilder::write_path_segments(string filename, FastaReader* fasta_reade
 				const Variant& variant = result.at(element)->get_variant(i);
 				// generate reference unitig and write to file
 				size_t start_pos = variant.get_start_position();
-				outfile << ">" << element << "_reference_" << start_pos << endl;
+				outfile << '>' << element << "_reference_" << start_pos << '\n';
 				string ref_segment;
 				graph_fasta_reader.get_subsequence(element, prev_end, start_pos, ref_segment);
-				outfile << ref_segment << endl;
+				outfile << ref_segment << '\n';
 				for (size_t allele = 0; allele < variant.nr_of_alleles(); ++allele) {
 					// sequence name
-					outfile << ">" << element << "_" << start_pos << "_" << allele << endl;
-					outfile << variant.get_allele_string(allele) << endl;
+					outfile << '>' << element << '_' << start_pos << '_' << allele << '\n';
+					outfile << variant.get_allele_string(allele) << '\n';
 				}
 				prev_end = variant.get_end_position();
 			}
 
 			// output reference sequence after last position on chromosome
-			outfile << ">" << element << "_reference_end" << endl;
+			outfile << '>' << element << "_reference_end\n";
 			size_t chr_len = graph_fasta_reader.get_size_of(element);
 			string ref_segment;
 			graph_fasta_reader.get_subsequence(element, prev_end, chr_len, ref_segment);
-			outfile << ref_segment << endl;
+			outfile << ref_segment << '\n';
 
 		} else {
 			// output chromosomes not present in VCF
-			outfile << ">" << element << "_reference_end" << endl;
+			outfile << '>' << element << "_reference_end\n";
 			size_t chr_len = fasta_reader->get_size_of(element);
 			string ref_segment;
 			assert(fasta_reader->contains_name(element));
 			fasta_reader->get_subsequence(element, prev_end, chr_len, ref_segment);
-			outfile << ref_segment << endl;
+			outfile << ref_segment << '\n';
 		}
 	}
 	outfile.close();

@@ -2,6 +2,7 @@
 #include <iostream>
 #include <iomanip>
 #include <math.h>
+#include <optional>
 #include <regex>
 #include "graphbuilder.hpp"
 #include "graph.hpp"
@@ -124,27 +125,29 @@ void Graph::write_genotypes(string filename, const vector<GenotypingResult>& gen
 		throw runtime_error("Graph::write_genotypes_of: number of variants and number of computed genotypes differ.");
 	}
 
+	vector<char> genotyping_buffer(1 << 20);
 	ofstream genotyping_outfile;
+	genotyping_outfile.rdbuf()->pubsetbuf(genotyping_buffer.data(), genotyping_buffer.size());
 	if (write_header) {
 		genotyping_outfile.open(filename);
 		if (! genotyping_outfile.is_open()) {
 			throw runtime_error("Graph::write_genotypes_of: genotyping output file cannot be opened. Note that the filename must not contain non-existing directories.");
 		}
-		
+
 		// write VCF header lines
-		genotyping_outfile << "##fileformat=VCFv4.2" << endl;
-		genotyping_outfile << "##fileDate=" << graph_get_date() << endl;
+		genotyping_outfile << "##fileformat=VCFv4.2\n";
+		genotyping_outfile << "##fileDate=" << graph_get_date() << '\n';
 		// TODO output command line
-		genotyping_outfile << "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele Frequency\">" << endl;
-		genotyping_outfile << "##INFO=<ID=UK,Number=1,Type=Integer,Description=\"Total number of unique kmers.\">" << endl;
-		genotyping_outfile << "##INFO=<ID=AK,Number=R,Type=Integer,Description=\"Number of unique kmers per allele. Will be -1 for alleles not covered by any input haplotype path\">" << endl;
-		genotyping_outfile << "##INFO=<ID=MA,Number=1,Type=Integer,Description=\"Number of alleles missing in panel haplotypes.\">" << endl;
-		genotyping_outfile << "##INFO=<ID=ID,Number=A,Type=String,Description=\"Variant IDs.\">" << endl;
-		genotyping_outfile << "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">" << endl;
-		genotyping_outfile << "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality: phred scaled probability that the genotype is wrong.\">" << endl;
-		genotyping_outfile << "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Comma-separated log10-scaled genotype likelihoods for absent, heterozygous, homozygous.\">" << endl;
-		genotyping_outfile << "##FORMAT=<ID=KC,Number=1,Type=Float,Description=\"Local kmer coverage.\">" << endl;
-		genotyping_outfile << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t" << sample << endl; 
+		genotyping_outfile << "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele Frequency\">\n";
+		genotyping_outfile << "##INFO=<ID=UK,Number=1,Type=Integer,Description=\"Total number of unique kmers.\">\n";
+		genotyping_outfile << "##INFO=<ID=AK,Number=R,Type=Integer,Description=\"Number of unique kmers per allele. Will be -1 for alleles not covered by any input haplotype path\">\n";
+		genotyping_outfile << "##INFO=<ID=MA,Number=1,Type=Integer,Description=\"Number of alleles missing in panel haplotypes.\">\n";
+		genotyping_outfile << "##INFO=<ID=ID,Number=A,Type=String,Description=\"Variant IDs.\">\n";
+		genotyping_outfile << "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n";
+		genotyping_outfile << "##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\"Genotype quality: phred scaled probability that the genotype is wrong.\">\n";
+		genotyping_outfile << "##FORMAT=<ID=GL,Number=G,Type=Float,Description=\"Comma-separated log10-scaled genotype likelihoods for absent, heterozygous, homozygous.\">\n";
+		genotyping_outfile << "##FORMAT=<ID=KC,Number=1,Type=Float,Description=\"Local kmer coverage.\">\n";
+		genotyping_outfile << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t" << sample << '\n';
 	} else {
 		genotyping_outfile.open(filename, std::ios_base::app);
 		if (! genotyping_outfile.is_open()) {
@@ -153,8 +156,9 @@ void Graph::write_genotypes(string filename, const vector<GenotypingResult>& gen
 	}
 
 	size_t counter = 0;
+	vector<double> likelihoods;
 	for (size_t i = 0; i < this->size(); ++i) {
-		shared_ptr<Variant> variant = this->variants.at(i);
+		const shared_ptr<Variant>& variant = this->variants.at(i);
 		unsigned short coverage = genotyping_result.at(i).coverage();
 		unsigned short nr_unique_kmers = genotyping_result.at(i).nr_unique_kmers();
 
@@ -164,19 +168,16 @@ void Graph::write_genotypes(string filename, const vector<GenotypingResult>& gen
 
 		if (variant->is_combined()) {
 			variant->separate_variants(&singleton_variants, &genotyping_result.at(i), &singleton_likelihoods, true);
-		} else {
-			singleton_variants = {*variant};
-			singleton_likelihoods = {genotyping_result.at(i)};
 		}
 
-
-		for (size_t j = 0; j < singleton_variants.size(); ++j) {
-			Variant v = singleton_variants[j];
-			v.remove_flanking_sequence();
+		const size_t singleton_count = variant->is_combined() ? singleton_variants.size() : 1;
+		for (size_t j = 0; j < singleton_count; ++j) {
+			const Variant& v = variant->is_combined() ? singleton_variants[j] : *variant;
+			const GenotypingResult& source_likelihoods = variant->is_combined() ? singleton_likelihoods[j] : genotyping_result[i];
 			genotyping_outfile << v.get_chromosome() << "\t"; // CHROM
 			genotyping_outfile << (v.get_start_position() + 1) << "\t"; // POS
 			genotyping_outfile << v.get_id() << "\t"; // ID
-			genotyping_outfile << v.get_allele_string(0) << "\t"; // REF
+			genotyping_outfile << v.get_allele_string_without_flanks(0) << "\t"; // REF
 
 			// get alternative allele
 			size_t nr_alleles = v.nr_of_alleles();
@@ -192,58 +193,57 @@ void Graph::write_genotypes(string filename, const vector<GenotypingResult>& gen
 			for (size_t i = 1; i < nr_alleles; ++i) {
 				// skip alleles that are undefined
 				if (!v.is_undefined_allele(i)) {
-					alt_alleles.push_back(v.get_allele_string(i));
+					alt_alleles.push_back(v.get_allele_string_without_flanks(i));
 					defined_alleles.push_back(i);
 				}
 			}
 
-			string alt_string = "";
-			for (unsigned short a = 0; a < alt_alleles.size(); ++a) {
-				if (a > 0) alt_string += ',';
-				alt_string += alt_alleles[a];
+			for (size_t a = 0; a < alt_alleles.size(); ++a) {
+				if (a > 0) genotyping_outfile << ',';
+				genotyping_outfile << alt_alleles[a];
 			}
 
-			genotyping_outfile << alt_string << "\t"; // ALT
+			genotyping_outfile << "\t"; // ALT
 			genotyping_outfile << ".\t"; // QUAL
 			genotyping_outfile << "PASS" << "\t"; // FILTER
 			// output allele frequencies of all alleles
-			ostringstream info;
-			info << "AF="; // AF
+			genotyping_outfile << "AF="; // AF
 			vector<float> allele_freqs = v.all_allele_frequencies(this->add_reference);
 			for (unsigned int a = 1; a < defined_alleles.size(); ++a) {
-				if (a > 1) info << ",";
-				info << setprecision(6) << allele_freqs[defined_alleles[a]];
+				if (a > 1) genotyping_outfile << ',';
+				genotyping_outfile << setprecision(6) << allele_freqs[defined_alleles[a]];
 			}
 
 			// keep only likelihoods for genotypes with defined alleles
 			size_t nr_missing = nr_alleles - defined_alleles.size();
-			GenotypingResult genotype_likelihoods_tmp = singleton_likelihoods.at(j);
-			GenotypingResult genotype_likelihoods;
+			GenotypingResult default_likelihoods;
+			const GenotypingResult* genotype_likelihoods = &source_likelihoods;
 
 			// in case GenotypingResult is empty (i.e. no likelihoods computed), which is the case
 			// if only reference paths cover the position, set likelihood for 0/0 allele to 1.
-			if (genotype_likelihoods_tmp.contains_no_likelihoods()) {
-				genotype_likelihoods_tmp.add_to_likelihood(0,0,1.0);
+			if (source_likelihoods.contains_no_likelihoods()) {
+				default_likelihoods.add_to_likelihood(0,0,1.0);
+				genotype_likelihoods = &default_likelihoods;
 			}
 
+			GenotypingResult filtered_likelihoods;
 			if (nr_missing > 0) {
-				genotype_likelihoods = genotype_likelihoods_tmp.get_specific_likelihoods(defined_alleles);
-			} else {
-				genotype_likelihoods = genotype_likelihoods_tmp;
+				filtered_likelihoods = genotype_likelihoods->get_specific_likelihoods(defined_alleles);
+				genotype_likelihoods = &filtered_likelihoods;
 			}
 
 			nr_alleles = defined_alleles.size();
 
-			info << ";UK=" << nr_unique_kmers; // UK
-			info << ";MA=" << nr_missing;
-	
+			genotyping_outfile << ";UK=" << nr_unique_kmers; // UK
+			genotyping_outfile << ";MA=" << nr_missing;
+
 			// if IDs were given in input, write them to output as well
-			if (!this->variant_ids[counter].empty()) info << ";ID=" << get_ids(alt_alleles, counter, false);
-			genotyping_outfile << info.str() << "\t"; // INFO
+			if (!this->variant_ids[counter].empty()) genotyping_outfile << ";ID=" << get_ids(alt_alleles, counter, false);
+			genotyping_outfile << "\t"; // INFO
 			genotyping_outfile << "GT:GQ:GL:KC" << "\t"; // FORMAT
 
 			// determine computed genotype
-			pair<int,int> genotype = genotype_likelihoods.get_likeliest_genotype();
+			pair<int,int> genotype = genotype_likelihoods->get_likeliest_genotype();
 			if (ignore_imputed && (nr_unique_kmers == 0)) genotype = {-1,-1};
 			if ( (genotype.first != -1) && (genotype.second != -1)) {
 
@@ -251,27 +251,25 @@ void Graph::write_genotypes(string filename, const vector<GenotypingResult>& gen
 				genotyping_outfile << genotype.first << "/" << genotype.second << ":"; // GT
 
 				// output genotype quality
-				genotyping_outfile << genotype_likelihoods.get_genotype_quality(genotype.first, genotype.second) << ":"; // GQ
+				genotyping_outfile << genotype_likelihoods->get_genotype_quality(genotype.first, genotype.second) << ":"; // GQ
 			} else {
 				// genotype could not be determined 
 				genotyping_outfile << ".:.:"; // GT:GQ
 			}
 
 			// output genotype likelihoods
-			vector<double> likelihoods = genotype_likelihoods.get_all_likelihoods(nr_alleles);
+			genotype_likelihoods->get_all_likelihoods(nr_alleles, likelihoods);
 			if (likelihoods.size() < 3) {
 				ostringstream oss;
 				oss << "Graph::write_genotypes_of: too few likelihoods (" << likelihoods.size() << ") computed for variant at position " << v.get_start_position() << endl;
 				throw runtime_error(oss.str());
 			}
 
-			ostringstream oss;
-			oss << setprecision(4) << log10(likelihoods[0]);
+			genotyping_outfile << setprecision(4) << log10(likelihoods[0]);
 			for (size_t j = 1; j < likelihoods.size(); ++j) {
-				oss << "," << setprecision(4) << log10(likelihoods[j]);
+				genotyping_outfile << ',' << setprecision(4) << log10(likelihoods[j]);
 			}
-			genotyping_outfile << oss.str(); // GL
-			genotyping_outfile << ":" << coverage << endl; // KC
+			genotyping_outfile << ':' << coverage << '\n'; // KC
 			counter += 1;
 		}
 	}
@@ -286,7 +284,9 @@ void Graph::write_phasing(string filename, const vector<GenotypingResult>& genot
 		throw runtime_error("Graph::write_phasing_of: number of variants and number of computed phasings differ.");
 	}
 
+	vector<char> phasing_buffer(1 << 20);
 	ofstream phasing_outfile;
+	phasing_outfile.rdbuf()->pubsetbuf(phasing_buffer.data(), phasing_buffer.size());
 	if (write_header) {
 		phasing_outfile.open(filename);
 		if (! phasing_outfile.is_open()) {
@@ -294,17 +294,17 @@ void Graph::write_phasing(string filename, const vector<GenotypingResult>& genot
 		}
 
 		// write VCF header lines
-		phasing_outfile << "##fileformat=VCFv4.2" << endl;
-		phasing_outfile << "##fileDate=" << graph_get_date() << endl;
+		phasing_outfile << "##fileformat=VCFv4.2\n";
+		phasing_outfile << "##fileDate=" << graph_get_date() << '\n';
 		// TODO output command line
-		phasing_outfile << "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele Frequency\">" << endl;
-		phasing_outfile << "##INFO=<ID=UK,Number=1,Type=Integer,Description=\"Total number of unique kmers.\">" << endl;
-		phasing_outfile << "##INFO=<ID=AK,Number=R,Type=Integer,Description=\"Number of unique kmers per allele. Will be -1 for alleles not covered by any input haplotype path.\">" << endl;
-		phasing_outfile << "##INFO=<ID=MA,Number=1,Type=Integer,Description=\"Number of alleles missing in panel haplotypes.\">" << endl;
-		phasing_outfile << "##INFO=<ID=ID,Number=A,Type=String,Description=\"Variant IDs.\">" << endl;
-		phasing_outfile << "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">" << endl;
-		phasing_outfile << "##FORMAT=<ID=KC,Number=1,Type=Float,Description=\"Local kmer coverage.\">" << endl;
-		phasing_outfile << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t" << sample << endl;
+		phasing_outfile << "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele Frequency\">\n";
+		phasing_outfile << "##INFO=<ID=UK,Number=1,Type=Integer,Description=\"Total number of unique kmers.\">\n";
+		phasing_outfile << "##INFO=<ID=AK,Number=R,Type=Integer,Description=\"Number of unique kmers per allele. Will be -1 for alleles not covered by any input haplotype path.\">\n";
+		phasing_outfile << "##INFO=<ID=MA,Number=1,Type=Integer,Description=\"Number of alleles missing in panel haplotypes.\">\n";
+		phasing_outfile << "##INFO=<ID=ID,Number=A,Type=String,Description=\"Variant IDs.\">\n";
+		phasing_outfile << "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n";
+		phasing_outfile << "##FORMAT=<ID=KC,Number=1,Type=Float,Description=\"Local kmer coverage.\">\n";
+		phasing_outfile << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t" << sample << '\n';
 	} else {
 		phasing_outfile.open(filename, std::ios_base::app);
 		if (! phasing_outfile.is_open()) {
@@ -314,7 +314,7 @@ void Graph::write_phasing(string filename, const vector<GenotypingResult>& genot
 
 	size_t counter = 0;
 	for (size_t i = 0; i < this->size(); ++i) {
-		shared_ptr<Variant> variant = this->variants.at(i);
+		const shared_ptr<Variant>& variant = this->variants.at(i);
 		unsigned short coverage = genotyping_result.at(i).coverage();
 		unsigned short nr_unique_kmers = genotyping_result.at(i).nr_unique_kmers();
 
@@ -324,19 +324,16 @@ void Graph::write_phasing(string filename, const vector<GenotypingResult>& genot
 
 		if (variant->is_combined()) {
 			variant->separate_variants(&singleton_variants, &genotyping_result.at(i), &singleton_likelihoods, true);
-		} else {
-			singleton_variants = {*variant};
-			singleton_likelihoods = {genotyping_result.at(i)};
 		}
 
-
-		for (size_t j = 0; j < singleton_variants.size(); ++j) {
-			Variant v = singleton_variants[j];
-			v.remove_flanking_sequence();
+		const size_t singleton_count = variant->is_combined() ? singleton_variants.size() : 1;
+		for (size_t j = 0; j < singleton_count; ++j) {
+			const Variant& v = variant->is_combined() ? singleton_variants[j] : *variant;
+			const GenotypingResult& source_likelihoods = variant->is_combined() ? singleton_likelihoods[j] : genotyping_result[i];
 			phasing_outfile << v.get_chromosome() << "\t"; // CHROM
 			phasing_outfile << (v.get_start_position() + 1) << "\t"; // POS
 			phasing_outfile << v.get_id() << "\t"; // ID
-			phasing_outfile << v.get_allele_string(0) << "\t"; // REF
+			phasing_outfile << v.get_allele_string_without_flanks(0) << "\t"; // REF
 
 			// get alternative alleles
 			size_t nr_alleles = v.nr_of_alleles();
@@ -352,39 +349,41 @@ void Graph::write_phasing(string filename, const vector<GenotypingResult>& genot
 			for (size_t i = 1; i < nr_alleles; ++i) {
 				// skip alleles that are undefined
 				if (! v.is_undefined_allele(i)) {
-					alt_alleles.push_back( v.get_allele_string(i));
+					alt_alleles.push_back(v.get_allele_string_without_flanks(i));
 					defined_alleles.push_back(i);
 				}
 			}
 
-			string alt_string = "";
-			for (unsigned short a = 0; a < alt_alleles.size(); ++a) {
-				if (a > 0) alt_string += ',';
-				alt_string += alt_alleles[a];
+			for (size_t a = 0; a < alt_alleles.size(); ++a) {
+				if (a > 0) phasing_outfile << ',';
+				phasing_outfile << alt_alleles[a];
 			}
 
 			size_t nr_missing = nr_alleles - defined_alleles.size();
-			GenotypingResult genotype_likelihoods = singleton_likelihoods.at(j);
-			if (nr_missing > 0) genotype_likelihoods = singleton_likelihoods.at(j).get_specific_likelihoods(defined_alleles);
+			GenotypingResult filtered_likelihoods;
+			const GenotypingResult* genotype_likelihoods = &source_likelihoods;
+			if (nr_missing > 0) {
+				filtered_likelihoods = source_likelihoods.get_specific_likelihoods(defined_alleles);
+				genotype_likelihoods = &filtered_likelihoods;
+			}
 
-			phasing_outfile << alt_string << "\t"; // ALT
+			phasing_outfile << "\t"; // ALT
 			phasing_outfile << ".\t"; // QUAL
 			phasing_outfile << "PASS" << "\t"; // FILTER
 			// output allele frequencies of all alleles
-			ostringstream info;
-			info << "AF=";
+			phasing_outfile << "AF=";
 			vector<float> allele_freqs = v.all_allele_frequencies(this->add_reference);
 			for (unsigned int a = 1; a < defined_alleles.size(); ++a) {
-				if (a > 1) info << ",";
-				info << setprecision(6) << allele_freqs[defined_alleles[a]];
+				if (a > 1) phasing_outfile << ',';
+				phasing_outfile << setprecision(6) << allele_freqs[defined_alleles[a]];
 			}
-			info << ";UK=" << nr_unique_kmers; // UK
-			info << ";MA=" << nr_missing;
+			phasing_outfile << ";UK=" << nr_unique_kmers; // UK
+			phasing_outfile << ";MA=" << nr_missing;
 
 			// if IDs were given in input, write them to output as well
-			if (!this->variant_ids[counter].empty()) info << ";ID=" << get_ids(alt_alleles, counter, false);
+			if (!this->variant_ids[counter].empty()) phasing_outfile << ";ID=" << get_ids(alt_alleles, counter, false);
 
-			phasing_outfile << info.str() << "\t"; // INFO
+			phasing_outfile << "\t"; // INFO
 			phasing_outfile << "GT:KC" << "\t"; // FORMAT
 
 			// determine phasing
@@ -392,23 +391,23 @@ void Graph::write_phasing(string filename, const vector<GenotypingResult>& genot
 				phasing_outfile << "./."; // GT (phased)
 			} else {
 
-				pair<unsigned short,unsigned short> haplotype = singleton_likelihoods.at(j).get_haplotype();
+				pair<unsigned short,unsigned short> haplotype = source_likelihoods.get_haplotype();
 				// check if the haplotype allele is undefined
 				bool hap1_undefined = v.is_undefined_allele(haplotype.first);
 				bool hap2_undefined = v.is_undefined_allele(haplotype.second);
 				if (hap1_undefined) {
 					phasing_outfile << ".|";
 				} else {
-					phasing_outfile << (unsigned int) genotype_likelihoods.get_haplotype().first << "|";
+					phasing_outfile << (unsigned int) genotype_likelihoods->get_haplotype().first << "|";
 				}
 
 				if (hap2_undefined) {
 					phasing_outfile << ".";
 				} else {
-					phasing_outfile << (unsigned int) genotype_likelihoods.get_haplotype().second;
+					phasing_outfile << (unsigned int) genotype_likelihoods->get_haplotype().second;
 				} 
 			}
-			phasing_outfile << ":" << coverage << endl; // KC
+			phasing_outfile << ':' << coverage << '\n'; // KC
 			counter += 1;
 		}
 	}
@@ -424,7 +423,9 @@ void Graph::write_sampled_panel(string filename, const vector<SampledPanel>& sam
 		throw runtime_error("Graph::write_sampled_panel: number of variants and number of computed phasings differ.");
 	}
 
+	vector<char> panel_buffer(1 << 20);
 	ofstream panel_outfile;
+	panel_outfile.rdbuf()->pubsetbuf(panel_buffer.data(), panel_buffer.size());
 	if (write_header) {
 		panel_outfile.open(filename);
 		if (! panel_outfile.is_open()) {
@@ -436,21 +437,21 @@ void Graph::write_sampled_panel(string filename, const vector<SampledPanel>& sam
 
 
 		// write VCF header lines
-		panel_outfile << "##fileformat=VCFv4.2" << endl;
-		panel_outfile << "##fileDate=" << graph_get_date() << endl;
+		panel_outfile << "##fileformat=VCFv4.2\n";
+		panel_outfile << "##fileDate=" << graph_get_date() << '\n';
 		// TODO output command line
-		panel_outfile << "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele Frequency\">" << endl;
-		panel_outfile << "##INFO=<ID=UK,Number=1,Type=Integer,Description=\"Total number of unique kmers.\">" << endl;
-		panel_outfile << "##INFO=<ID=MA,Number=1,Type=Integer,Description=\"Number of alleles missing in panel haplotypes.\">" << endl;
-		panel_outfile << "##INFO=<ID=ID,Number=A,Type=String,Description=\"Variant IDs.\">" << endl;
-		panel_outfile << "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">" << endl;
+		panel_outfile << "##INFO=<ID=AF,Number=A,Type=Float,Description=\"Allele Frequency\">\n";
+		panel_outfile << "##INFO=<ID=UK,Number=1,Type=Integer,Description=\"Total number of unique kmers.\">\n";
+		panel_outfile << "##INFO=<ID=MA,Number=1,Type=Integer,Description=\"Number of alleles missing in panel haplotypes.\">\n";
+		panel_outfile << "##INFO=<ID=ID,Number=A,Type=String,Description=\"Variant IDs.\">\n";
+		panel_outfile << "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n";
 		panel_outfile << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t";
 
 		for (size_t i = 0; i < nr_paths; ++i) {
 			if (i > 0) panel_outfile << "\t";
 			panel_outfile << "sampledHT" << i;
 		}
-		panel_outfile << endl;
+		panel_outfile << '\n';
 
 	} else {
 		panel_outfile.open(filename, std::ios_base::app);
@@ -461,7 +462,7 @@ void Graph::write_sampled_panel(string filename, const vector<SampledPanel>& sam
 
 	size_t counter = 0;
 	for (size_t i = 0; i < this->size(); ++i) {
-		shared_ptr<Variant> variant = this->variants.at(i);
+		const shared_ptr<Variant>& variant = this->variants.at(i);
 		size_t nr_unique_kmers = sampled_paths.at(i).get_unique_kmers();
 
 		// separate (possibly combined) variant into single variants and print a line for each
@@ -470,18 +471,16 @@ void Graph::write_sampled_panel(string filename, const vector<SampledPanel>& sam
 
 		if (variant->is_combined()) {
 			variant->separate_variants_panel(&singleton_variants, &sampled_paths.at(i), &singleton_sampled, true);
-		} else {
-			singleton_variants = {*variant};
-			singleton_sampled = {sampled_paths.at(i)};
 		}
 
-		for (size_t j = 0; j < singleton_sampled.size(); ++j) {
-			Variant v = singleton_variants[j];
-			v.remove_flanking_sequence();
+		const size_t singleton_count = variant->is_combined() ? singleton_variants.size() : 1;
+		for (size_t j = 0; j < singleton_count; ++j) {
+			const Variant& v = variant->is_combined() ? singleton_variants[j] : *variant;
+			const SampledPanel& source_panel = variant->is_combined() ? singleton_sampled[j] : sampled_paths[i];
 			panel_outfile << v.get_chromosome() << "\t"; // CHROM
 			panel_outfile << (v.get_start_position() + 1) << "\t"; // POS
 			panel_outfile << v.get_id() << "\t"; // ID
-			panel_outfile << v.get_allele_string(0) << "\t"; // REF
+			panel_outfile << v.get_allele_string_without_flanks(0) << "\t"; // REF
 
 			// get alternative alleles
 			size_t nr_alleles = v.nr_of_alleles();
@@ -496,55 +495,57 @@ void Graph::write_sampled_panel(string filename, const vector<SampledPanel>& sam
 			for (size_t i = 1; i < nr_alleles; ++i) {
 				// skip alleles that are undefined
 				if (! v.is_undefined_allele(i)) {
-					alt_alleles.push_back(v.get_allele_string(i));
+					alt_alleles.push_back(v.get_allele_string_without_flanks(i));
 					defined_alleles.push_back(i);
 				}
 			}
 
-			string alt_string = "";
-			for (unsigned short a = 0; a < alt_alleles.size(); ++a) {
-				if (a > 0) alt_string += ',';
-				alt_string += alt_alleles[a];
+			for (size_t a = 0; a < alt_alleles.size(); ++a) {
+				if (a > 0) panel_outfile << ',';
+				panel_outfile << alt_alleles[a];
 			}
 
 			size_t nr_missing = nr_alleles - defined_alleles.size();
-			SampledPanel paths = singleton_sampled.at(j);
-			if (nr_missing > 0) paths = singleton_sampled.at(j).get_specific_alleles(defined_alleles);
+			optional<SampledPanel> filtered_paths;
+			const SampledPanel* paths = &source_panel;
+			if (nr_missing > 0) {
+				filtered_paths.emplace(source_panel.get_specific_alleles(defined_alleles));
+				paths = &*filtered_paths;
+			}
 
-			panel_outfile << alt_string << "\t"; // ALT
+			panel_outfile << "\t"; // ALT
 			panel_outfile << ".\t"; // QUAL
 			panel_outfile << "PASS" << "\t"; // FILTER
 			// output allele frequencies of all alleles
-			ostringstream info;
-			info << "AF=";
+			panel_outfile << "AF=";
 			vector<float> allele_freqs = v.all_allele_frequencies(this->add_reference);
 			for (unsigned int a = 1; a < defined_alleles.size(); ++a) {
-				if (a > 1) info << ",";
-				info << setprecision(6) << allele_freqs[defined_alleles[a]];
+				if (a > 1) panel_outfile << ',';
+				panel_outfile << setprecision(6) << allele_freqs[defined_alleles[a]];
 			}
 
-			info << ";UK=" << nr_unique_kmers;
-			info << ";MA=" << nr_missing;
+			panel_outfile << ";UK=" << nr_unique_kmers;
+			panel_outfile << ";MA=" << nr_missing;
 
 			// if IDs were given in input, write them to output as well
-			if (!this->variant_ids[counter].empty()) info << ";ID=" << get_ids(alt_alleles, counter, false);
+			if (!this->variant_ids[counter].empty()) panel_outfile << ";ID=" << get_ids(alt_alleles, counter, false);
 
-			panel_outfile << info.str() << "\t"; // INFO
+			panel_outfile << "\t"; // INFO
 			panel_outfile << "GT" << "\t"; // FORMAT
 
 			// determine phasing
-			vector<int> alleles = paths.get_all_paths();
+			vector<int> alleles = paths->get_all_paths();
 			for (size_t a = 0; a < alleles.size(); ++a) {
 				if (a > 0) panel_outfile << "\t";
 				// check if original allele was undefined
-				if (v.is_undefined_allele(singleton_sampled.at(j).get_allele_on_path(a))) {
+				if (v.is_undefined_allele(source_panel.get_allele_on_path(a))) {
 					assert (alleles[a] == -1);
 					panel_outfile << ".";
 				} else {
 					panel_outfile << alleles[a];
 				}
 			}
-			panel_outfile << endl;
+			panel_outfile << '\n';
 			counter += 1;
 		}
 	}

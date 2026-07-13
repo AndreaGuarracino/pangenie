@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include "columnindexer.hpp"
@@ -9,6 +10,7 @@ ColumnIndexer::ColumnIndexer (vector<shared_ptr<UniqueKmers>>* unique_kmers, vec
 	:unique_kmers(unique_kmers)
 {
 	size_t column_count = unique_kmers->size();
+	this->variant_positions.reserve(column_count);
 	for (size_t column_index = 0; column_index < column_count; ++ column_index) {
 		vector<unsigned short> current_paths;
 		vector<unsigned short> current_alleles;
@@ -31,58 +33,20 @@ ColumnIndexer::ColumnIndexer (vector<shared_ptr<UniqueKmers>>* unique_kmers, vec
 			if (this->paths.size() != current_paths.size()) {
 				throw runtime_error("ColumnIndexer::ColumnIndexer: varying number of paths across columns.");
 			}
-			size_t nr_paths_size_t = this->paths.size();
-			for (size_t path_index = 0; path_index < nr_paths_size_t; ++path_index) {
-				unsigned short path_id = this->paths[path_index];
-				bool found = false;
-				for (size_t i = 0; i < current_paths.size(); ++i) {
-					if (current_paths[i] == path_id) {
-						this->allele_by_column_path.push_back(current_alleles[i]);
-						found = true;
-						break;
+				if (current_paths == this->paths) {
+					this->allele_by_column_path.insert(this->allele_by_column_path.end(), current_alleles.begin(), current_alleles.end());
+				} else {
+					// Preserve support for callers that provide the same paths in a different order.
+					for (unsigned short path_id : this->paths) {
+						auto path_it = find(current_paths.begin(), current_paths.end(), path_id);
+						if (path_it == current_paths.end()) {
+							throw runtime_error("ColumnIndexer::ColumnIndexer: path missing in column.");
+						}
+						this->allele_by_column_path.push_back(current_alleles[path_it - current_paths.begin()]);
 					}
 				}
-				if (!found) {
-					throw runtime_error("ColumnIndexer::ColumnIndexer: path missing in column.");
-				}
-			}
 		}
 	}
-}
-
-size_t ColumnIndexer::get_variant_id(size_t column_index) const {
-	if (column_index >= this->variant_positions.size()) {
-		throw runtime_error("ColumnIndexer::get_variant_id: column index does not exist.");
-	} else {
-		return this->variant_positions.at(column_index);
-	}
-}
-
-size_t ColumnIndexer::size() const {
-	return this->variant_positions.size();
-}
-
-unsigned short ColumnIndexer::nr_paths() const {
-	return this->paths.size();
-}
-
-unsigned short ColumnIndexer::get_path(unsigned short path_index) const {
-	if (path_index >= this->paths.size()) {
-		throw runtime_error("ColumnIndexer::get_path: path_index does not exist.");
-	} else {
-		return this->paths.at(path_index);
-	}
-}
-
-unsigned short ColumnIndexer::get_allele (unsigned short path_index, size_t column_index) const {
-	if (path_index >= this->paths.size()) {
-		throw runtime_error("ColumnIndexer::get_allele: path_index does not exist.");
-	}
-	if (column_index >= this->variant_positions.size()) {
-		throw runtime_error("ColumnIndex::get_allele: column_index does not exist.");
-	}
-	size_t idx = column_index * this->paths.size() + path_index;
-	return this->allele_by_column_path.at(idx);
 }
 
 pair<unsigned short,unsigned short> ColumnIndexer::get_path_ids_at (size_t position) const {

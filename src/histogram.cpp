@@ -29,11 +29,17 @@ void Histogram::add_value(size_t value) {
 	}
 }
 
+void Histogram::add_count(size_t value, size_t count) {
+	if (value < this->histogram.size()) {
+		this->histogram[value] += count;
+	}
+}
+
 void Histogram::write_to_file(string filename) const {
 	ofstream histfile;
 	histfile.open(filename);
 	for (size_t i = 0; i < this->histogram.size(); ++i) {
-		histfile << i << '\t' << this->histogram.at(i) << endl;
+		histfile << i << '\t' << this->histogram.at(i) << '\n';
 	}
 	histfile.close();
 }
@@ -64,7 +70,7 @@ void Histogram::find_peaks(vector<size_t>& peak_ids, vector<size_t>& peak_values
 
 ostream& operator<<(ostream& os, const Histogram& hist) {
 	for (size_t i = 0; i < hist.histogram.size(); ++i) {
-		os << i << '\t' << hist.histogram[i] << endl;
+		os << i << '\t' << hist.histogram[i] << '\n';
 	}
 	return os;
 }

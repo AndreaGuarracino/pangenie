@@ -100,6 +100,7 @@ void StepwiseUniqueKmerComputer::compute_unique_kmers(vector<shared_ptr<UniqueKm
 		ss << "UniqueKmerComputer::compute_unique_kmers: File " << filename << " cannot be created. Note that the filename must not contain non-existing directories." << endl;
 		throw runtime_error(ss.str());
 	}
+	gzbuffer(outfile, 1 << 20);
 
 	// write header of output file
 	string header = "#chromosome\tstart\tend\tunique_kmers\tunique_kmers_overhang\n";
@@ -179,8 +180,9 @@ void StepwiseUniqueKmerComputer::compute_unique_kmers(vector<shared_ptr<UniqueKm
 			not_first = true;
 		}
 		if (!not_first) outline << "nan";
-		outline << endl;
-		gzwrite(outfile, outline.str().c_str(), outline.str().size());
+		outline << '\n';
+		const string output_line = outline.str();
+		gzwrite(outfile, output_line.data(), output_line.size());
 
 		result->push_back(u);
 
