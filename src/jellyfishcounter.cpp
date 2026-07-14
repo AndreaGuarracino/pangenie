@@ -4,6 +4,7 @@
 #include <memory>
 #include <stdexcept>
 #include <thread>
+#include <chrono>
 #include <math.h>
 #include <fstream>
 #include "histogram.hpp"
@@ -62,12 +63,16 @@ JellyfishCounter::JellyfishCounter (string readfile, vector<string> kmerfiles, s
 	const bool canonical = true; // Use canonical representation
 
 	// create the hash
+	// [count-phase] Edit A instrumentation (stderr only; no behavior change)
+	auto _cp_t0 = std::chrono::steady_clock::now();
 	this->jellyfish_hash = new mer_hash_type(hash_size, jellyfish::mer_dna::k()*2, counter_len, num_threads, num_reprobes);
+	double _cp_alloc = std::chrono::duration<double>(std::chrono::steady_clock::now() - _cp_t0).count();
 
 	// convert the filenames to char**
 	vector<char*> reads_args = to_args(readfile);
 
-	// process input kmers contained in the provided FASTQ files
+	// process input kmers contained in the provided FASTQ files (PRIME graph k-mers)
+	auto _cp_tp = std::chrono::steady_clock::now();
 	for (auto kmerfile : kmerfiles) {
 		vector<char*> kmer_args = to_args(kmerfile);
 		mer_counter jellyfish_counter(num_threads, (*jellyfish_hash), &kmer_args[0], (&kmer_args[0])+1, canonical, PRIME);
@@ -77,10 +82,21 @@ JellyfishCounter::JellyfishCounter (string readfile, vector<string> kmerfiles, s
 		for(size_t i = 0; i < kmer_args.size(); i++)
 			delete[] kmer_args[i];
 	}
+	double _cp_prime = std::chrono::duration<double>(std::chrono::steady_clock::now() - _cp_tp).count();
 
-	// process read kmers
-	mer_counter jellyfish_counter(num_threads, (*jellyfish_hash), &reads_args[0], (&reads_args[0])+1, canonical, UPDATE);
-	jellyfish_counter.exec_join(num_threads);
+	// process read kmers (UPDATE existing panel keys with read counts; misses probe + do nothing)
+	// Edit B: custom scanner + pluggable sink. Validation sink = hash update_add,
+	// which must be byte-identical to the mer_counter UPDATE it replaces.
+	auto _cp_tu = std::chrono::steady_clock::now();
+	HashUpdateSink update_sink(*jellyfish_hash, num_threads);
+	mer_scanner<HashUpdateSink> read_scanner(num_threads, &reads_args[0], (&reads_args[0])+1, canonical, update_sink);
+	read_scanner.exec_join(num_threads);
+	double _cp_update = std::chrono::duration<double>(std::chrono::steady_clock::now() - _cp_tu).count();
+
+	std::cerr << "[count-phase] hash_alloc_s=" << _cp_alloc
+	          << " allocated_slots=" << this->jellyfish_hash->size()
+	          << " prime_s=" << _cp_prime
+	          << " update_read_s=" << _cp_update << '\n';
 
 	// delete the readfile char**
 	for(size_t i = 0; i < reads_args.size(); i++)
@@ -159,6 +175,7 @@ size_t JellyfishCounter::computeHistogram(size_t max_count, bool largest_peak, s
 	vector<vector<size_t>> partial_histograms(worker_count, vector<size_t>(max_count + 1, 0));
 	vector<thread> workers;
 	workers.reserve(worker_count);
+	auto _cp_th = std::chrono::steady_clock::now();
 	for (size_t worker_id = 0; worker_id < worker_count; ++worker_id) {
 		workers.emplace_back([jf_ary, worker_id, worker_count, max_count, &partial_histograms]() {
 			auto slice = jf_ary->region_slice(worker_id, worker_count);
@@ -170,11 +187,17 @@ size_t JellyfishCounter::computeHistogram(size_t max_count, bool largest_peak, s
 		});
 	}
 	for (auto& worker : workers) worker.join();
+	double _cp_hist = std::chrono::duration<double>(std::chrono::steady_clock::now() - _cp_th).count();
+	size_t _cp_nonzero = 0;
 	for (size_t value = 1; value <= max_count; ++value) {
 		size_t count = 0;
 		for (const auto& bins : partial_histograms) count += bins[value];
 		histogram.add_count(value, count);
+		_cp_nonzero += count;
 	}
+	std::cerr << "[count-phase] histogram_scan_s=" << _cp_hist
+	          << " panel_kmers_1.._max=" << _cp_nonzero
+	          << " slots_scanned=" << this->jellyfish_hash->size() << '\n';
 	// write histogram values to file
 	if (filename != "") {
 		histogram.write_to_file(filename);

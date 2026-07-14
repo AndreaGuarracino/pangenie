@@ -69,6 +69,45 @@ public:
 };
 
 
+// ---- Edit B: pluggable read scanner ----------------------------------------
+// Reuses jellyfish's EXACT parser + mer_iterator (canonicalization, N-handling,
+// read boundaries identical to mer_counter above), so the canonical k-mer stream
+// is byte-identical by construction. Only the per-k-mer SINK changes. This is the
+// single hook the membership filter (Edit C) and static dictionary (Edit D) plug into.
+// Sink must provide: operator()(int thid, const jellyfish::mer_dna&) and finish(int thid).
+template<class Sink>
+class mer_scanner : public jellyfish::thread_exec {
+	jellyfish::stream_manager<char**> streams_;
+	sequence_parser_type parser_;
+	const bool canonical_;
+	Sink& sink_;
+public:
+	mer_scanner(int nb_threads, char** file_begin, char** file_end, bool canonical, Sink& sink)
+	: streams_(file_begin, file_end)
+	, parser_(jellyfish::mer_dna::k(), streams_.nb_streams(), 3 * nb_threads, 64 * 1024, streams_)
+	, canonical_(canonical)
+	, sink_(sink)
+	{ }
+
+	virtual void start(int thid) {
+		mer_iterator_type mers(parser_, canonical_);
+		for( ; mers; ++mers) sink_(thid, *mers);
+		sink_.finish(thid);
+	}
+};
+
+// Validation sink for Edit B: reproduces mer_counter's UPDATE exactly
+// (per-thread scratch mer_dna; per-thread hash done()).
+struct HashUpdateSink {
+	mer_hash_type& hash_;
+	std::vector<jellyfish::mer_dna> tmp_;
+	HashUpdateSink(mer_hash_type& hash, int nb_threads) : hash_(hash), tmp_(nb_threads) {}
+	inline void operator()(int thid, const jellyfish::mer_dna& m) { hash_.update_add(m, 1, tmp_[thid]); }
+	inline void finish(int /*thid*/) { hash_.done(); }
+};
+// ---------------------------------------------------------------------------
+
+
 class JellyfishCounter : public KmerCounter {
 public:
 	/** 
