@@ -4,6 +4,7 @@
 #include <sstream>
 #include <sys/resource.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <thread>
 #include <algorithm>
 #include <fstream>
@@ -14,6 +15,8 @@
 #include "kmercounter.hpp"
 #include "jellyfishreader.hpp"
 #include "jellyfishcounter.hpp"
+#include "staticdictcounter.hpp"
+#include <cstdlib>
 #include "emissionprobabilitycomputer.hpp"
 #include "copynumber.hpp"
 #include "graph.hpp"
@@ -42,6 +45,36 @@ bool ends_with (string const &filename, string const &ending) {
 bool file_exists(const string& path) {
 	ifstream f(path);
 	return f.good();
+}
+
+// Locate a helper binary (ggcat, sshash) that ships next to this executable
+// (installed together, e.g. /usr/local/bin), falling back to the bare name so a
+// PATH lookup still works. No environment variable, no configuration.
+static string sibling_tool(const string& name) {
+	char buf[4096];
+	ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+	if (n > 0) {
+		buf[n] = '\0';
+		string exe(buf);
+		size_t slash = exe.find_last_of('/');
+		if (slash != string::npos) {
+			string cand = exe.substr(0, slash + 1) + name;
+			if (file_exists(cand)) return cand;
+		}
+	}
+	return name;
+}
+
+// Build the read-kmer counter, auto-selecting the SSHash static streaming backend
+// when <prefix>.sshash exists (built by PanGenie-index -S); otherwise Jellyfish.
+// No configuration: the presence of the dictionary next to the index is the switch.
+static std::shared_ptr<KmerCounter> make_read_counter(const std::string& readfile, const std::string& index_prefix, const std::string& segment_file, size_t kmersize, size_t nr_threads, uint64_t hash_size) {
+	std::string sshash_path = index_prefix.empty() ? std::string() : index_prefix + ".sshash";
+	if (!sshash_path.empty() && file_exists(sshash_path)) {
+		std::cerr << "Using SSHash static counting backend: " << sshash_path << std::endl;
+		return std::shared_ptr<KmerCounter>(new StaticDictCounter(readfile, sshash_path, kmersize, nr_threads, hash_size));
+	}
+	return std::shared_ptr<KmerCounter>(new JellyfishCounter(readfile, {segment_file}, kmersize, nr_threads, hash_size));
 }
 
 void check_input_file(string &filename) {
@@ -332,7 +365,7 @@ int run_single_command(string precomputed_prefix, string readfile, string reffil
 				cerr << "Count kmers in reads ..." << endl;
 
 				if (count_only_graph) {
-					read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, {segment_file}, kmersize, nr_jellyfish_threads, hash_size));
+					read_kmer_counts = make_read_counter(readfile, outname, segment_file, kmersize, nr_jellyfish_threads, hash_size);
 				} else {
 					read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, kmersize, nr_jellyfish_threads, hash_size));
 				}
@@ -603,7 +636,7 @@ int run_single_command(string precomputed_prefix, string readfile, string reffil
 }
 
 
-int run_index_command(string reffile, string vcffile, size_t kmersize, string outname, size_t nr_jellyfish_threads, bool add_reference, uint64_t hash_size)
+int run_index_command(string reffile, string vcffile, size_t kmersize, string outname, size_t nr_jellyfish_threads, bool add_reference, uint64_t hash_size, bool build_sshash)
 {
 
 	Timer timer;
@@ -746,6 +779,35 @@ int run_index_command(string reffile, string vcffile, size_t kmersize, string ou
 				pool.submit(job);
 			}
 		}
+	}
+
+	// Optionally build the SSHash dictionary for the static streaming counting
+	// backend, from the same path_segments.fasta the graph k-mers were counted on.
+	// Runs ggcat (unitigs / SPSS) then sshash build; both ship next to this binary.
+	if (build_sshash) {
+		string unitigs = outname + "_unitigs.fa";
+		string dict    = outname + ".sshash";
+		string tmpdir  = outname + "_ggcat_tmp";
+		string ggcat = sibling_tool("ggcat");
+		string sshb  = sibling_tool("sshash");
+		cerr << "Building SSHash dictionary for the static counting backend ..." << endl;
+		{
+			ostringstream cmd;
+			cmd << ggcat << " build -k " << kmersize << " -s 1 -j " << nr_jellyfish_threads
+			    << " -t " << tmpdir << " -o " << unitigs << " " << segment_file;
+			cerr << "[index] " << cmd.str() << endl;
+			int rc = system(cmd.str().c_str());
+			if (rc != 0) throw runtime_error("PanGenie-index: ggcat unitig build failed (rc=" + to_string(rc) + "). Expected ggcat next to PanGenie-index or on PATH.");
+		}
+		{
+			ostringstream cmd;
+			cmd << sshb << " build -i " << unitigs << " -k " << kmersize << " -m 20 -o " << dict;
+			cerr << "[index] " << cmd.str() << endl;
+			int rc = system(cmd.str().c_str());
+			if (rc != 0) throw runtime_error("PanGenie-index: sshash build failed (rc=" + to_string(rc) + "). Expected sshash next to PanGenie-index or on PATH.");
+		}
+		remove(unitigs.c_str());   // large intermediate, not needed once the dict exists
+		cerr << "SSHash dictionary written: " << dict << endl;
 	}
 
 	getrusage(RUSAGE_SELF, &rss_total);
@@ -910,7 +972,7 @@ int run_genotype_command(string precomputed_prefix, string readfile, string outn
 				cerr << "Count kmers in reads ..." << endl;
 
 				if (count_only_graph) {
-					read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, {segment_file}, kmersize, nr_jellyfish_threads, hash_size));
+					read_kmer_counts = make_read_counter(readfile, precomputed_prefix, segment_file, kmersize, nr_jellyfish_threads, hash_size);
 				} else {
 					read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, kmersize, nr_jellyfish_threads, hash_size));
 				}
@@ -1379,7 +1441,7 @@ int run_sampling(string precomputed_prefix, string readfile, string outname, siz
 				cerr << "Count kmers in reads ..." << endl;
 
 				if (count_only_graph) {
-					read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, {segment_file}, kmersize, nr_jellyfish_threads, hash_size));
+					read_kmer_counts = make_read_counter(readfile, precomputed_prefix, segment_file, kmersize, nr_jellyfish_threads, hash_size);
 				} else {
 					read_kmer_counts = shared_ptr<JellyfishCounter>(new JellyfishCounter(readfile, kmersize, nr_jellyfish_threads, hash_size));
 				}

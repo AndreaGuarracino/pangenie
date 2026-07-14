@@ -13,6 +13,8 @@ add_library(PanGenieLib SHARED
 	histogram.cpp
 	hmm.cpp
 	jellyfishcounter.cpp
+	staticdictcounter.cpp
+	sshash_backend.cpp
 	jellyfishreader.cpp
 	kmerpath.cpp
 	kmerpath16.cpp
@@ -33,6 +35,25 @@ add_library(PanGenieLib SHARED
 	biallelicuniquekmers.cpp
 	variant.cpp
 	variantreader.cpp)
+
+# Edit D1: SSHash static-dictionary backend. Only sshash_backend.cpp needs these headers.
+# SSHASH_ROOT points at an sshash source checkout (github.com/jermp/sshash, recursive).
+# Default is a repo-relative external/sshash; override with -DSSHASH_ROOT=/path.
+if(NOT DEFINED SSHASH_ROOT)
+	set(SSHASH_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../external/sshash")
+endif()
+target_include_directories(PanGenieLib PRIVATE
+	${SSHASH_ROOT}
+	${SSHASH_ROOT}/include
+	${SSHASH_ROOT}/external/pthash/include
+	${SSHASH_ROOT}/external/pthash/external/bits/include
+	${SSHASH_ROOT}/external/pthash/external/fastmod
+	${SSHASH_ROOT}/external/pthash/external/mm_file/include
+	${SSHASH_ROOT}/external/pthash/external/cmd_line_parser/include
+	${SSHASH_ROOT}/external/pthash/external/xxHash
+	${SSHASH_ROOT}/external/pthash/external/bits/external/essentials/include
+	${SSHASH_ROOT}/external/cityhash
+	${SSHASH_ROOT}/external/gz)
 
 
 add_executable(PanGenie-index pangenie-index.cpp)

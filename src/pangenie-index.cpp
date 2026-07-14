@@ -24,6 +24,7 @@ int main(int argc, char* argv[]) {
 	size_t nr_jellyfish_threads = 1;
 	bool add_reference = true;
 	uint64_t hash_size = 3000000000;
+	bool build_sshash = false;
 
 	// parse the command line arguments
 	CommandLineParser argument_parser;
@@ -34,6 +35,7 @@ int main(int argc, char* argv[]) {
 	argument_parser.add_optional_argument('k', "31", "kmer size");
 	argument_parser.add_optional_argument('t', "1", "number of threads to use for kmer-counting");
 	argument_parser.add_optional_argument('e', "3000000000", "size of hash used by jellyfish");
+	argument_parser.add_flag_argument('S', "also build an SSHash dictionary (<prefix>.sshash) for the static streaming counting backend; uses the ggcat and sshash binaries bundled next to PanGenie-index");
 //	argument_parser.add_flag_argument('d', "do not add reference as additional path.");
 
 	try {
@@ -53,6 +55,7 @@ int main(int argc, char* argv[]) {
 	nr_jellyfish_threads = stoi(argument_parser.get_argument('t'));
 	istringstream iss(argument_parser.get_argument('e'));
 	iss >> hash_size;
+	build_sshash = argument_parser.get_flag('S');
 //	add_reference = !argument_parser.get_flag('d');
 
 	// print info
@@ -60,7 +63,7 @@ int main(int argc, char* argv[]) {
 	argument_parser.info();
 
 	// run preprocessing
-	int exit_code = run_index_command(reffile, vcffile, kmersize, outname, nr_jellyfish_threads, add_reference, hash_size);
+	int exit_code = run_index_command(reffile, vcffile, kmersize, outname, nr_jellyfish_threads, add_reference, hash_size, build_sshash);
 	getrusage(RUSAGE_SELF, &rss_total);
 
 

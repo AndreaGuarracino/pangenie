@@ -12,3 +12,4 @@ tests/data/testfull_genotyping.vcf
 tests/data/testfull_histogram.histo
 tests/data/testsampled_genotyping.vcf
 tests/data/testsampled_histogram.histo
+external/
