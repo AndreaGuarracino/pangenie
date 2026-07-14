@@ -434,13 +434,6 @@ int run_single_command(string precomputed_prefix, string readfile, string reffil
 			vector<vector<unsigned short>> subsets;
 			path_sampler.partition_samples(subsets, sampling_size);
 
-			for (auto s : subsets) {
-				for (auto b : s) {
-					cout << b << endl;
-				}
-				cout << "-----" << endl;
-			}
-
 			if (!only_phasing) cerr << "Sampled " << subsets.size() << " subset(s) of paths each of size " << sampling_size << " for genotyping." << endl;
 
 			// for now, run phasing only once on largest set of paths that can still be handled.
@@ -1005,13 +998,6 @@ int run_genotype_command(string precomputed_prefix, string readfile, string outn
 			PathSampler path_sampler(nr_paths);
 			vector<vector<unsigned short>> subsets;
 			path_sampler.partition_samples(subsets, sampling_size);
-
-			for (auto s : subsets) {
-				for (auto b : s) {
-					cout << b << endl;
-				}
-				cout << "-----" << endl;
-			}
 
 			if (!only_phasing) cerr << "Sampled " << subsets.size() << " subset(s) of paths each of size " << sampling_size << " for genotyping." << endl;
 
