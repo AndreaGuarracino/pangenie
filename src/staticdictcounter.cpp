@@ -95,7 +95,9 @@ size_t StaticDictCounter::computeHistogram(size_t max_count, bool largest_peak, 
 	for (size_t worker_id = 0; worker_id < worker_count; ++worker_id) {
 		workers.emplace_back([this, worker_id, worker_count, max_count, n, &partial_histograms]() {
 			auto& bins = partial_histograms[worker_id];
-			for (size_t i = worker_id; i < n; i += worker_count) {
+			const size_t lo = n / worker_count * worker_id + std::min(n % worker_count, worker_id);
+			const size_t hi = n / worker_count * (worker_id + 1) + std::min(n % worker_count, worker_id + 1);
+			for (size_t i = lo; i < hi; ++i) {
 				size_t value = counts_[i];
 				if ((value > 0) && (value <= max_count)) ++bins[value];
 			}

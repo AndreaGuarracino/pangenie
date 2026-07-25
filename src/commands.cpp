@@ -868,7 +868,7 @@ int run_genotype_command(string precomputed_prefix, string readfile, string outn
 		UniqueKmersMap unique_kmers_list;
 		ProbabilityTable probabilities;
 		string segment_file = precomputed_prefix + "_path_segments.fasta";
-		check_input_file(segment_file);
+		if (!file_exists(precomputed_prefix + ".sshash")) check_input_file(segment_file);
 		size_t available_threads_uk;
 		size_t nr_cores_uk;
 		unsigned short nr_paths = 0;
@@ -1382,7 +1382,7 @@ int run_sampling(string precomputed_prefix, string readfile, string outname, siz
 		UniqueKmersMap unique_kmers_list;
 		ProbabilityTable probabilities;
 		string segment_file = precomputed_prefix + "_path_segments.fasta";
-        check_input_file(segment_file);
+		if (!file_exists(precomputed_prefix + ".sshash")) check_input_file(segment_file);
 		size_t available_threads_uk;
 		size_t nr_cores_uk;
 		unsigned short nr_paths = 0;
